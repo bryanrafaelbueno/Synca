@@ -91,7 +91,7 @@ export function Sidebar({ sendCommand }: Props) {
         <span className="footer-version">v0.1.0-mvp</span>
         <a
           className="footer-link"
-          href="https://github.com/synca/synca"
+          href="https://github.com/bryanrafaelbueno/synca"
           target="_blank"
           rel="noopener noreferrer"
         >
