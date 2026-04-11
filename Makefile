@@ -112,14 +112,6 @@ dev: daemon
 build: daemon app-build
 	@echo "Build complete."
 
-# ── Setup ──────────────────────────────────────────────────────
-setup:
-	@echo "Installing frontend dependencies..."
-	cd desktop && npm install
-
-	@echo "Downloading Go modules..."
-	cd daemon && go mod tidy
-
 # ── Dependency Check ───────────────────────────────────────────
 check-deps:
 	@echo "Checking build dependencies..."

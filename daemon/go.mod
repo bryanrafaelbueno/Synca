@@ -5,6 +5,7 @@ go 1.22
 require (
 	github.com/fsnotify/fsnotify v1.7.0
 	github.com/gorilla/websocket v1.5.1
+	github.com/joho/godotenv v1.5.1
 	github.com/rs/zerolog v1.32.0
 	github.com/spf13/cobra v1.8.0
 	golang.org/x/oauth2 v0.18.0
