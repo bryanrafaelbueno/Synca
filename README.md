@@ -4,7 +4,7 @@
 
 <p align="center">
   <b>Sincronização de arquivos com o Google Drive no Linux e Windows</b><br/>
-  Simples, leve e open source — uma alternativa gratuita ao Insync
+  Simples, leve e open source, uma alternativa gratuita ao Insync
 </p>
 
 <p align="center">
