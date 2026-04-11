@@ -57,6 +57,27 @@ Interface atualiza automaticamente
 
 ---
 
+## 📁 Estrutura do Projeto
+
+```
+synca/
+├── assets/                  # Logos e recursos visuais
+├── bin/                     # Binários compilados do daemon
+├── daemon/                  # Backend em Go (daemon de sincronização)
+│   ├── cmd/synca/           # Entrypoint do CLI
+│   └── internal/            # Lógica interna (watcher, sync, API)
+├── desktop/                 # App desktop (Tauri + React)
+│   ├── ui/                  # Frontend React (componentes, hooks, store)
+│   ├── src-tauri/           # Backend Rust do Tauri (obrigatório esse nome)
+│   ├── index.html           # Entrypoint do Vite
+│   ├── vite.config.ts       # Configuração do Vite
+│   └── package.json         # Dependências do frontend
+├── Makefile                 # Comandos de build, dev e release
+└── README.md
+```
+
+---
+
 ## 📦 Instalação
 
 ### 1. Clone o projeto
