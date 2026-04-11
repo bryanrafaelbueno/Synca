@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -16,6 +17,9 @@ import (
 	"google.golang.org/api/option"
 )
 
+//go:embed .env.embedded
+var embeddedEnv string
+
 const (
 	localRedirectPort = "9373"
 	localRedirectURL  = "http://localhost:9373/oauth/callback"
@@ -26,14 +30,30 @@ func configDir() string {
 	return filepath.Join(home, ".config", "synca")
 }
 
-// loadEnv attempts to load .env from current dir or parent dirs
+// loadEnv attempts to load .env from current dir or parent dirs,
+// falling back to embedded credentials if available.
 func loadEnv() {
-	// Try current dir, then up to 2 levels of parents
+	// 1. Try physical .env files (Dev mode)
 	dirs := []string{".", "..", "../.."}
 	for _, dir := range dirs {
 		envPath := filepath.Join(dir, ".env")
 		if _, err := os.Stat(envPath); err == nil {
 			_ = godotenv.Load(envPath)
+			log.Debug().Str("path", envPath).Msg("Loaded environment from file")
+			return
+		}
+	}
+
+	// 2. Try embedded .env (Production/Release mode)
+	if embeddedEnv != "" {
+		env, err := godotenv.Unmarshal(embeddedEnv)
+		if err == nil {
+			for k, v := range env {
+				if os.Getenv(k) == "" {
+					os.Setenv(k, v)
+				}
+			}
+			log.Debug().Msg("Loaded environment from embedded fallback")
 			return
 		}
 	}

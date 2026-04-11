@@ -11,7 +11,8 @@ desktop/src-tauri/target/
 # Releases
 releases/
 
-# Credentials (NEVER commit these)
+# Credentials (NEVER commit these)# Embedded secrets (temporary)
+daemon/internal/auth/.env.embedded
 *.json
 !desktop/package.json
 !desktop/tsconfig.json

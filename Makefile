@@ -8,12 +8,16 @@ LINUXDEPLOY ?= $(shell which linuxdeploy-x86_64.AppImage 2>/dev/null || which li
 
 # ── Backend (Go daemon) ────────────────────────────────────────
 daemon:
-	@echo "Building synca daemon..."
+	@echo "Building synca daemon with embedded env..."
+	cp .env daemon/internal/auth/.env.embedded || touch daemon/internal/auth/.env.embedded
 	cd daemon && go build -o ../bin/synca-daemon-x86_64-unknown-linux-gnu ./cmd/synca
+	rm -f daemon/internal/auth/.env.embedded && touch daemon/internal/auth/.env.embedded
 
 daemon-windows:
-	@echo "Building synca daemon for Windows..."
+	@echo "Building synca daemon for Windows with embedded env..."
+	cp .env daemon/internal/auth/.env.embedded || touch daemon/internal/auth/.env.embedded
 	cd daemon && GOOS=windows GOARCH=amd64 go build -o ../bin/synca-daemon-x86_64-pc-windows-gnu.exe ./cmd/synca
+	rm -f daemon/internal/auth/.env.embedded && touch daemon/internal/auth/.env.embedded
 
 daemon-run: daemon
 	./bin/synca-daemon-x86_64-unknown-linux-gnu daemon
