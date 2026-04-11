@@ -105,38 +105,27 @@ synca/
 ```bash
 git clone https://github.com/bryanrafaelbueno/synca
 cd synca
+
+# Configure credentials for development
+cp .env.example .env
+# Edit .env and add your GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET
+
 make setup
-````
-
----
-
-### 2. Configure Google Drive
-
-You will need to:
-
-* Create a project on Google Cloud
-* Enable the Google Drive API
-* Download `credentials.json` to:
-
-```
-~/.config/synca/credentials.json
-or
-C:\Users\yourusername\.config\synca\credentials.json
 ```
 
 ---
 
-### 3. Connect account
+### 2. Connect Google Drive
 
-```bash
-./bin/synca-daemon connect google-drive
-```
+Synca now uses an embedded OAuth client. To connect:
 
-👉 This will open the browser for login
+1. Build and run Synca (`make dev` or use the installer).
+2. Click **"Log in to Google Drive"** in the UI.
+3. Authenticate in your browser and you're connected!
 
 ---
 
-### 4. Choose folder
+### 3. Choose folder
 
 ```bash
 ./bin/synca-daemon watch ~/Documents
@@ -274,9 +263,8 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev
 ## 🏗️ Quick Setup Checklist
 1.  **Verify Environment**: Run `make check-deps` to see if anything is missing.
 2.  **Install Dependencies**: Run `make setup`.
-3.  **Config Credentials**: Run `make setup-creds` and follow instructions.
-4.  **Run Dev Mode**: Run `make dev`.
-5.  **Build Release**: Run `make release-linux` or `make release-windows`.
+3.  **Run Dev Mode**: Run `make dev`.
+4.  **Build Release**: Run `make release-linux` or `make release-windows`.
 
 ---
 

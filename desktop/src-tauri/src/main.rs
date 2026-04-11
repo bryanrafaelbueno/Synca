@@ -17,30 +17,7 @@ async fn login_google_drive(app: tauri::AppHandle) -> Result<String, String> {
     }
 }
 
-#[tauri::command]
-fn has_credentials(app: tauri::AppHandle) -> bool {
-    if let Ok(mut path) = app.path().home_dir() {
-        path.push(".config");
-        path.push("synca");
-        path.push("credentials.json");
-        return path.exists();
-    }
-    false
-}
-
-#[tauri::command]
-fn save_credentials(app: tauri::AppHandle, source_path: String) -> Result<(), String> {
-    let mut dest = app.path().home_dir().map_err(|e| e.to_string())?;
-    dest.push(".config");
-    dest.push("synca");
-    if !dest.exists() {
-        std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
-    }
-    dest.push("credentials.json");
-    std::fs::copy(&source_path, &dest).map_err(|e| e.to_string())?;
-    Ok(())
-}
-
+// Simplified setup: only check for token.json
 #[tauri::command]
 fn has_token(app: tauri::AppHandle) -> bool {
     if let Ok(mut path) = app.path().home_dir() {
@@ -93,8 +70,6 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             login_google_drive, 
-            has_credentials, 
-            save_credentials, 
             has_token, 
             start_daemon,
             restart_daemon

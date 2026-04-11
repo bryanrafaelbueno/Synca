@@ -25,22 +25,6 @@ export function ConnectScreen({ setupState, error, checkSetup }: ConnectScreenPr
     }
   };
 
-  const handleUploadCredentials = async () => {
-    try {
-      const selected = await open({
-        multiple: false,
-        filters: [{ name: 'JSON Config', extensions: ['json'] }]
-      });
-      if (selected && typeof selected === 'string') {
-        await invoke('save_credentials', { sourcePath: selected });
-        alert("Credentials saved successfully!");
-        checkSetup();
-      }
-    } catch (e) {
-      console.error(e);
-      alert("Error saving file: " + e);
-    }
-  };
 
   return (
     <div className="connect-screen">
@@ -59,16 +43,10 @@ export function ConnectScreen({ setupState, error, checkSetup }: ConnectScreenPr
         
         <p className="connect-msg">
            {setupState === 'checking' ? "Looking for saved settings..." :
-            setupState === 'needs_creds' ? "You need to upload the credentials.json file from Google Cloud." : 
             setupState === 'needs_token' ? "Log in to Google Drive to authorize Synca." : error}
         </p>
         
         <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {setupState === 'needs_creds' && (
-            <button className="btn-connect" onClick={handleUploadCredentials}>
-              Upload (credentials.json)
-            </button>
-          )}
 
           {setupState === 'needs_token' && (
             <button className="btn-connect" onClick={handleLogin} disabled={isLoggingIn}>

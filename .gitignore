@@ -27,3 +27,6 @@ Thumbs.db
 .vscode/
 desktop/.cargo-home/
 desktop/.npm-cache/
+
+# Production Secrets
+.env

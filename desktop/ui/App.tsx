@@ -16,11 +16,6 @@ export default function App() {
 
   const checkSetup = async () => {
     try {
-      const creds = await invoke<boolean>('has_credentials')
-      if (!creds) {
-        setSetupState('needs_creds')
-        return
-      }
       const token = await invoke<boolean>('has_token')
       if (!token) {
         setSetupState('needs_token')

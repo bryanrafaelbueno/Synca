@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/joho/godotenv"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -25,30 +26,57 @@ func configDir() string {
 	return filepath.Join(home, ".config", "synca")
 }
 
-// oauthConfig loads credentials.json
-func oauthConfig() (*oauth2.Config, error) {
-	credFile := filepath.Join(configDir(), "credentials.json")
-
-	data, err := os.ReadFile(credFile)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"credentials.json not found at %s — download it from Google Cloud Console (OAuth 2.0 Client ID for Desktop app)",
-				       credFile,
-		)
+// loadEnv attempts to load .env from current dir or parent dirs
+func loadEnv() {
+	// Try current dir, then up to 2 levels of parents
+	dirs := []string{".", "..", "../.."}
+	for _, dir := range dirs {
+		envPath := filepath.Join(dir, ".env")
+		if _, err := os.Stat(envPath); err == nil {
+			_ = godotenv.Load(envPath)
+			return
+		}
 	}
-
-	cfg, err := google.ConfigFromJSON(data, drive.DriveScope)
-	if err != nil {
-		return nil, fmt.Errorf("invalid credentials.json: %w", err)
-	}
-
-	cfg.RedirectURL = localRedirectURL
-	return cfg, nil
 }
 
-// RunOAuthFlow handles browser login + token exchange
+// Embedded Google OAuth2 Credentials fallback
+var (
+	googleClientID     = os.Getenv("GOOGLE_CLIENT_ID")
+	googleClientSecret = os.Getenv("GOOGLE_CLIENT_SECRET")
+)
+
+func oauthConfig() *oauth2.Config {
+	loadEnv()
+	
+	// Re-read env after loading .env file
+	clientID := os.Getenv("GOOGLE_CLIENT_ID")
+	if clientID == "" {
+		clientID = googleClientID // Fallback
+	}
+	clientSecret := os.Getenv("GOOGLE_CLIENT_SECRET")
+	if clientSecret == "" {
+		clientSecret = googleClientSecret // Fallback
+	}
+
+	return &oauth2.Config{
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		Endpoint:     google.Endpoint,
+		Scopes:       []string{drive.DriveScope},
+		RedirectURL:  localRedirectURL,
+	}
+}
+
+// RunOAuthFlow handles browser login + token exchange using PKCE
 func RunOAuthFlow() error {
-	cfg, err := oauthConfig()
+	cfg := oauthConfig()
+
+	if cfg.ClientID == "" || cfg.ClientID == "YOUR_CLIENT_ID.apps.googleusercontent.com" {
+		return fmt.Errorf("GOOGLE_CLIENT_ID is missing. Please set it in your .env file at the project root")
+	}
+
+	// Generate PKCE params
+	pkce, err := NewPKCEParams()
 	if err != nil {
 		return err
 	}
@@ -67,9 +95,9 @@ func RunOAuthFlow() error {
 			return
 		}
 
-		fmt.Fprintf(w, `<html><body style="font-family:sans-serif;padding:40px">
-		<h2>✓ Synca connected to Google Drive!</h2>
-		<p>You can close this window.</p>
+		fmt.Fprintf(w, `<html><body style="font-family:sans-serif;padding:40px;text-align:center">
+		<h2 style="color:#0F6E56">✓ Synca connected!</h2>
+		<p>You can close this window and return to the app.</p>
 		</body></html>`)
 
 		codeCh <- code
@@ -81,23 +109,27 @@ func RunOAuthFlow() error {
 		}
 	}()
 
-	authURL := cfg.AuthCodeURL("synca-state", oauth2.AccessTypeOffline, oauth2.ApprovalForce)
+	// Build auth URL with PKCE challenge
+	authURL := cfg.AuthCodeURL("synca-state", 
+		oauth2.AccessTypeOffline, 
+		oauth2.ApprovalForce,
+		oauth2.SetAuthURLParam("code_challenge", pkce.Challenge),
+		oauth2.SetAuthURLParam("code_challenge_method", "S256"),
+	)
 
-	log.Info().Str("url", authURL).Msg("Opening browser for Google Drive authentication...")
-
+	log.Info().Msg("Opening browser for Google Drive authentication (PKCE)...")
 	openBrowser(authURL)
-
-	fmt.Printf("\nIf the browser didn't open, visit:\n%s\n\n", authURL)
 
 	var code string
 	select {
-		case code = <-codeCh:
-		case err = <-errCh:
-			return err
+	case code = <-codeCh:
+	case err = <-errCh:
+		return err
 	}
 
 	ctx := context.Background()
-	token, err := cfg.Exchange(ctx, code)
+	// Exchange with PKCE verifier
+	token, err := cfg.Exchange(ctx, code, oauth2.SetAuthURLParam("code_verifier", pkce.Verifier))
 	if err != nil {
 		return fmt.Errorf("token exchange failed: %w", err)
 	}
@@ -146,10 +178,7 @@ func LoadToken() (*oauth2.Token, error) {
 
 // NewDriveService creates authenticated Drive client
 func NewDriveService(ctx context.Context) (*drive.Service, error) {
-	cfg, err := oauthConfig()
-	if err != nil {
-		return nil, err
-	}
+	cfg := oauthConfig()
 
 	token, err := LoadToken()
 	if err != nil {

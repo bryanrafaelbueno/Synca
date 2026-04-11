@@ -1,6 +1,6 @@
 .PHONY: daemon daemon-windows daemon-run app-dev app-build \
         release-linux release-windows appimage-manual \
-        dev build setup setup-creds clean check-deps
+        dev build setup clean check-deps
 
 # ── Configuration ─────────────────────────────────────────────
 # Path to linuxdeploy-x86_64.AppImage. Defaults to PATH or local tools dir.
@@ -134,25 +134,14 @@ check-deps:
 	fi
 	@echo "Dependency check complete."
 
-# ── Credentials helper ─────────────────────────────────────────
-setup-creds:
-	@echo "Setting up configuration directory..."
-	@if [ "$$(uname)" = "Linux" ]; then \
-		mkdir -p ~/.config/synca; \
-		DEST="~/.config/synca/credentials.json"; \
-	else \
-		mkdir -p "$$APPDATA/synca"; \
-		DEST="$$APPDATA/synca/credentials.json"; \
-	fi
-	@echo ""
-	@echo "Steps to configure Google Drive API:"
-	@echo "  1. Go to https://console.cloud.google.com"
-	@echo "  2. Create a project and enable 'Google Drive API'"
-	@echo "  3. Go to 'Credentials' -> 'Create Credentials' -> 'OAuth 2.0 Client ID'"
-	@echo "  4. Select 'Desktop App' and download the JSON file"
-	@echo "  5. Move the downloaded file to: $$DEST"
-	@echo "  6. Run authentication:"
-	@echo "     make daemon && ./bin/synca-daemon-x86_64-unknown-linux-gnu connect google-drive"
+# ── Setup ──────────────────────────────────────────────────────
+setup: check-deps
+	@echo "Installing frontend dependencies..."
+	cd desktop && npm install
+	@echo "Downloading Go modules..."
+	cd daemon && go mod tidy
+	@echo "✓ Setup complete."
+	@echo "To connect to Google Drive, build and run the app, then click 'Log in' in the UI."
 
 # ── Clean ──────────────────────────────────────────────────────
 clean:
