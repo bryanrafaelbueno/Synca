@@ -1,0 +1,27 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+configure | abort-upgrade | abort-remove | abort-deconfigure)
+  # User unit: enable for all user sessions (after graphical login).
+  if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload || true
+    if systemctl enable --global synca.service 2>/dev/null; then
+      :
+    else
+      mkdir -p /etc/systemd/user/default.target.wants
+      ln -sf /usr/lib/systemd/user/synca.service \
+        /etc/systemd/user/default.target.wants/synca.service
+      systemctl daemon-reload || true
+    fi
+  else
+    mkdir -p /etc/systemd/user/default.target.wants
+    ln -sf /usr/lib/systemd/user/synca.service \
+      /etc/systemd/user/default.target.wants/synca.service
+  fi
+  ;;
+*) ;;
+
+esac
+
+exit 0

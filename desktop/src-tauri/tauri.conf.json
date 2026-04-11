@@ -1,0 +1,61 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Synca",
+  "version": "0.1.0",
+  "identifier": "io.synca.desktop",
+  "build": {
+    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "security": {
+      "csp": null
+    },
+    "windows": [
+      {
+        "fullscreen": false,
+        "height": 600,
+        "resizable": true,
+        "title": "Synca",
+        "width": 800
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "publisher": "Bryan Rafael <brthy467@gmail.com>",
+    "category": "Utility",
+    "shortDescription": "Lightweight Linux file sync client",
+    "longDescription": "Synca keeps local folders in sync with cloud storage through a lightweight daemon and native desktop UI.",
+    "targets": [
+      "deb",
+      "appimage",
+      "nsis"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "linux": {
+      "deb": {
+        "postInstallScript": "packaging/postinst",
+        "postRemoveScript": "packaging/postrm",
+        "files": {
+          "/usr/lib/systemd/user/synca.service": "packaging/synca.service",
+          "/usr/lib/systemd/user-preset/99-synca.preset": "packaging/99-synca.preset"
+        }
+      }
+    },
+    "externalBin": [
+      "../../bin/synca-daemon"
+    ],
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

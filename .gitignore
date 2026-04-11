@@ -1,0 +1,29 @@
+# Go
+bin/
+daemon/vendor/
+*.test
+
+# Node / Tauri
+desktop/node_modules/
+desktop/dist/
+desktop/src-tauri/target/
+
+# Releases
+releases/
+
+# Credentials (NEVER commit these)
+*.json
+!desktop/package.json
+!desktop/tsconfig.json
+!desktop/src-tauri/tauri.conf.json
+
+# Config & tokens
+~/.config/synca/
+
+# OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+desktop/.cargo-home/
+desktop/.npm-cache/

@@ -1,0 +1,284 @@
+import { useState } from 'react'
+import { useSyncStore, selectFiles, FileEntry, FileStatus } from '../store/syncStore'
+
+interface FileListProps {
+  sendCommand: (action: string, payload?: object) => void
+}
+
+type TreeNode = {
+  name: string;
+  path: string;
+  isFolder: boolean;
+  children: Record<string, TreeNode>;
+  file?: FileEntry;
+};
+
+async function pickWatchFolder(): Promise<string | null> {
+  try {
+    const { open } = await import('@tauri-apps/plugin-dialog')
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: 'Escolher pasta para sincronizar',
+    })
+    console.log("Dialog result:", selected);
+    if (!selected) return null;
+    if (typeof selected === 'string') return selected;
+    if (Array.isArray(selected) && (selected as any[]).length > 0) return String((selected as any[])[0]);
+    return null;
+  } catch (err) {
+    console.error("Dialog error:", err);
+    const raw = window.prompt('Caminho absoluto da pasta:')
+    return raw?.trim() || null
+  }
+}
+
+const STATUS_LABELS: Record<FileStatus, string> = {
+  synced: 'sincronizado',
+  syncing: 'sincronizando…',
+  queued: 'na fila',
+  conflict: 'conflito',
+  error: 'erro',
+}
+
+function StatusPill({ status }: { status: FileStatus }) {
+  return (
+    <span className={`pill pill-${status}`}>
+      {status === 'syncing' && <span className="pill-spinner" />}
+      {STATUS_LABELS[status]}
+    </span>
+  )
+}
+
+function FileIcon({ path }: { path: string }) {
+  const ext = path.split('.').pop()?.toLowerCase() ?? ''
+  const iconColor: Record<string, string> = {
+    pdf: '#E85D24',
+    doc: '#185FA5', docx: '#185FA5',
+    xls: '#3B6D11', xlsx: '#3B6D11',
+    ppt: '#993C1D', pptx: '#993C1D',
+    jpg: '#854F0B', jpeg: '#854F0B', png: '#854F0B', gif: '#854F0B',
+    mp4: '#533AB7', mov: '#533AB7', mkv: '#533AB7',
+    zip: '#5F5E5A', tar: '#5F5E5A', gz: '#5F5E5A',
+    md: '#185FA5', txt: '#444441',
+    js: '#BA7517', ts: '#185FA5',
+    py: '#3B6D11', go: '#0F6E56',
+  }
+  const color = iconColor[ext] ?? '#888780'
+  return (
+    <div className="file-icon" style={{ background: color + '18' }}>
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <rect x="2" y="1" width="10" height="12" rx="1.5" stroke={color} strokeWidth="1"/>
+        <path d="M4 5h6M4 7.5h6M4 10h4" stroke={color} strokeWidth="1" strokeLinecap="round"/>
+      </svg>
+    </div>
+  )
+}
+
+function FileRow({ entry, depth = 0 }: { entry: FileEntry, depth?: number }) {
+  const fileName = entry.local_path.split('/').pop() ?? entry.local_path
+
+  const lastSync = entry.last_sync
+    ? new Date(entry.last_sync).toLocaleString('pt-BR', {
+        day: '2-digit', month: '2-digit',
+        hour: '2-digit', minute: '2-digit',
+      })
+    : '—'
+
+  return (
+    <div 
+      className={`file-row ${entry.status === 'conflict' ? 'file-row-conflict' : ''}`}
+      style={{ paddingLeft: 20 + depth * 16 }}
+    >
+      <FileIcon path={entry.local_path} />
+      <div className="file-info">
+        <div className="file-name">{fileName}</div>
+        {entry.error && <div className="file-error">{entry.error}</div>}
+      </div>
+      <div className="file-meta">
+        <div className="file-sync-time">{lastSync}</div>
+        <StatusPill status={entry.status} />
+      </div>
+    </div>
+  )
+}
+
+function TreeNodeView({ node, depth = 0 }: { node: TreeNode, depth?: number }) {
+  const [isOpen, setIsOpen] = useState(true);
+
+  if (!node.isFolder) {
+    return <FileRow entry={node.file!} depth={depth} />;
+  }
+
+  return (
+    <div className="tree-node">
+      <div 
+        className="tree-folder-row" 
+        style={{ paddingLeft: 20 + depth * 16 }}
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        <span className="tree-chevron">{isOpen ? '▼' : '▶'}</span>
+        <svg className="folder-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+        </svg>
+        <span className="tree-folder-name">{node.name}</span>
+      </div>
+      {isOpen && (
+        <div className="tree-children">
+          {Object.values(node.children)
+            .sort((a, b) => {
+              if (a.isFolder === b.isFolder) return a.name.localeCompare(b.name);
+              return a.isFolder ? -1 : 1;
+            })
+            .map(child => (
+              <TreeNodeView key={child.path} node={child} depth={depth + 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function FileList({ sendCommand }: FileListProps) {
+  const files = useSyncStore(selectFiles)
+  const { searchQuery, setSearchQuery, connected, lastWsError, setLastWsError } = useSyncStore()
+
+  const onAddWatchFolder = async () => {
+    if (!connected) return
+    setLastWsError(null)
+    const path = await pickWatchFolder()
+    if (!path) return
+    sendCommand('add_watch', { path })
+  }
+
+  const counts = {
+    conflict: files.filter(f => f.status === 'conflict').length,
+    error: files.filter(f => f.status === 'error').length,
+  }
+
+  const rootNode: TreeNode = { name: 'root', path: '', isFolder: true, children: {} };
+
+  files.forEach(f => {
+    const parts = f.local_path.split('/').filter(Boolean);
+    let current = rootNode;
+    
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const isFile = (i === parts.length - 1);
+      const nodePath = '/' + parts.slice(0, i + 1).join('/');
+      
+      if (!current.children[part]) {
+        current.children[part] = {
+          name: part,
+          path: nodePath,
+          isFolder: !isFile,
+          children: {}
+        };
+      }
+      
+      if (isFile) {
+        current.children[part].file = f;
+        current.children[part].isFolder = false;
+      }
+      current = current.children[part];
+    }
+  });
+
+  let displayRoots = Object.values(rootNode.children);
+  while (displayRoots.length === 1 && displayRoots[0].isFolder) {
+    const single = displayRoots[0];
+    const hasDirectFiles = Object.values(single.children).some(c => !c.isFolder);
+    if (hasDirectFiles) break;
+    displayRoots = Object.values(single.children);
+  }
+
+  let displayContent;
+  if (searchQuery.trim()) {
+    displayContent = files.map(f => <FileRow key={f.local_path} entry={f} />);
+  } else {
+    displayContent = displayRoots
+      .sort((a, b) => {
+        if (a.isFolder === b.isFolder) return a.name.localeCompare(b.name);
+        return a.isFolder ? -1 : 1;
+      })
+      .map(child => <TreeNodeView key={child.path} node={child} depth={0} />);
+  }
+
+  return (
+    <div className="file-list">
+      <div className="file-list-header">
+        <div className="header-title">
+          <span>Arquivos</span>
+          {counts.conflict > 0 && (
+            <span className="badge-warn">{counts.conflict} conflito{counts.conflict > 1 ? 's' : ''}</span>
+          )}
+          {counts.error > 0 && (
+            <span className="badge-error">{counts.error} erro{counts.error > 1 ? 's' : ''}</span>
+          )}
+        </div>
+        <div className="header-tools">
+          <div className="search-wrap">
+            <svg className="search-icon" width="13" height="13" viewBox="0 0 13 13" fill="none">
+              <circle cx="5.5" cy="5.5" r="4" stroke="currentColor" strokeWidth="1.2"/>
+              <path d="M9 9L12 12" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+            </svg>
+            <input
+              className="search-input"
+              type="text"
+              placeholder="Buscar arquivos…"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
+          </div>
+          <button
+            type="button"
+            className="btn-add-watch"
+            title="Adicionar pasta à sincronização"
+            disabled={!connected}
+            onClick={() => void onAddWatchFolder()}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+              <line x1="12" y1="11" x2="12" y2="17" />
+              <line x1="9" y1="14" x2="15" y2="14" />
+            </svg>
+            <span className="btn-add-watch-label">Pasta</span>
+          </button>
+        </div>
+      </div>
+
+      {lastWsError && (
+        <div className="folder-action-banner" role="status">
+          {lastWsError}
+          <button type="button" className="folder-action-dismiss" onClick={() => setLastWsError(null)} aria-label="Fechar">
+            ×
+          </button>
+        </div>
+      )}
+
+      <div className="file-list-body">
+        {!connected && (
+          <div className="empty-state">
+            <div className="empty-icon">⏳</div>
+            <div className="empty-title">Conectando ao daemon…</div>
+            <div className="empty-sub">Aguarde um momento</div>
+          </div>
+        )}
+
+        {connected && files.length === 0 && (
+          <div className="empty-state">
+            <div className="empty-icon">📂</div>
+            <div className="empty-title">Nenhum arquivo encontrado</div>
+            <div className="empty-sub">
+              {searchQuery
+                ? 'Tente outro termo de busca'
+                : 'Clique em Pasta ao lado da busca ou use synca watch ~/pasta no terminal'}
+            </div>
+          </div>
+        )}
+
+        {connected && files.length > 0 && displayContent}
+      </div>
+    </div>
+  )
+}

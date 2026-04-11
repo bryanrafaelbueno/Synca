@@ -1,0 +1,15 @@
+# User session unit — enabled on package install for all users (graphical-session).
+# OAuth and config live under ~/.config/synca (runs as your UID).
+[Unit]
+Description=Synca sync daemon
+After=graphical-session-pre.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/synca-daemon daemon
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=graphical-session.target
