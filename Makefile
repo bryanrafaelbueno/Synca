@@ -37,7 +37,6 @@ release-windows: daemon-windows
 	@echo "Exporting Windows releases to root..."
 	mkdir -p releases/windows
 	cp -r desktop/src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/*.exe releases/windows/ || true
-	cp -r desktop/src-tauri/target/x86_64-pc-windows-gnu/release/bundle/msi/*.msi releases/windows/ || true
 	@echo "Release Windows artifacts exported to ./releases/windows/"
 
 # ── Dev: run app ───────────────────────────────────────────────
