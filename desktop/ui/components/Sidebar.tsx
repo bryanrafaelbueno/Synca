@@ -88,7 +88,7 @@ export function Sidebar({ sendCommand }: Props) {
       </div>
 
       <div className="sidebar-footer">
-        <span className="footer-version">v0.1.0-mvp</span>
+        <span className="footer-version">v0.2.0-mvp</span>
         <a
           className="footer-link"
           href="https://github.com/bryanrafaelbueno/synca"
