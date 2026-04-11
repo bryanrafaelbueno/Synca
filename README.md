@@ -142,16 +142,12 @@ make app-dev
 
 ## 🖥️ Interface
 
+<img width="1882" height="1011" alt="image" src="https://github.com/user-attachments/assets/43f39ece-8182-4c15-833d-c25428eaf677" />
+
 - Sync status
 - File list
 - Progress
 - Connection state
-
-*(add screenshots later)*
-
-```
-/assets/screenshot.png
-```
 
 ---
 
