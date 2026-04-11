@@ -3,9 +3,14 @@ set -e
 
 case "$1" in
 remove | purge)
+  echo "Cleaning up Synca daemon service..."
   if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+    systemctl stop --global synca.service 2>/dev/null || true
     systemctl disable --global synca.service 2>/dev/null || true
     systemctl daemon-reload || true
+  fi
+  if command -v pkill >/dev/null 2>&1; then
+    pkill -f synca-daemon || true
   fi
   rm -f /etc/systemd/user/default.target.wants/synca.service
   ;;

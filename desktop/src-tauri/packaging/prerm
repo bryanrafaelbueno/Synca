@@ -1,0 +1,21 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+remove | deconfigure)
+  echo "Stopping Synca daemon..."
+  # Try to stop global user service if running
+  if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+    systemctl stop --global synca.service 2>/dev/null || true
+  fi
+  
+  # Ensure all daemon processes are killed
+  if command -v pkill >/dev/null 2>&1; then
+    pkill -f synca-daemon || true
+  fi
+  ;;
+upgrade | failed-upgrade) ;;
+*) ;;
+esac
+
+exit 0
