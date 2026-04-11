@@ -1,6 +1,10 @@
 .PHONY: daemon daemon-windows daemon-run app-dev app-build \
         release-linux release-windows appimage-manual \
-        dev build setup setup-creds clean
+        dev build setup setup-creds clean check-deps
+
+# ── Configuration ─────────────────────────────────────────────
+# Path to linuxdeploy-x86_64.AppImage. Defaults to PATH or local tools dir.
+LINUXDEPLOY ?= $(shell which linuxdeploy-x86_64.AppImage 2>/dev/null || which linuxdeploy 2>/dev/null || echo "$$HOME/tools/linuxdeploy/linuxdeploy-x86_64.AppImage")
 
 # ── Backend (Go daemon) ────────────────────────────────────────
 daemon:
@@ -45,7 +49,7 @@ appimage-manual:
 
 	cd desktop/src-tauri/target/release/bundle/appimage && \
 	export NO_STRIP=1 && \
-	$$HOME/tools/linuxdeploy/linuxdeploy-x86_64.AppImage \
+	$(LINUXDEPLOY) \
 		--appdir Synca.AppDir \
 		--executable Synca.AppDir/usr/bin/synca \
 		--output appimage
@@ -116,17 +120,38 @@ setup:
 	@echo "Downloading Go modules..."
 	cd daemon && go mod tidy
 
+# ── Dependency Check ───────────────────────────────────────────
+check-deps:
+	@echo "Checking build dependencies..."
+	@go version >/dev/null 2>&1 || (echo "❌ Go is not installed"; exit 1)
+	@rustc --version >/dev/null 2>&1 || (echo "❌ Rust is not installed"; exit 1)
+	@npm --version >/dev/null 2>&1 || (echo "❌ NPM is not installed"; exit 1)
+	@echo "✅ Core compilers (Go, Rust, Node.js) are present."
+	@if [ "$$(uname)" = "Linux" ]; then \
+		(pkg-config --exists webkit2gtk-4.1 || pkg-config --exists webkit2gtk-4.0) || (echo "⚠️ webkit2gtk development headers not found (required for Tauri on Linux)"); \
+		which makensis >/dev/null 2>&1 || echo "⚠️ makensis not found (required for building Windows installers on Linux)"; \
+		[ -f "$(LINUXDEPLOY)" ] || which linuxdeploy-x86_64.AppImage >/dev/null 2>&1 || echo "⚠️ linuxdeploy not found (required for AppImage)"; \
+	fi
+	@echo "Dependency check complete."
+
 # ── Credentials helper ─────────────────────────────────────────
 setup-creds:
-	@echo "Creating config directory..."
-	mkdir -p ~/.config/synca
+	@echo "Setting up configuration directory..."
+	@if [ "$$(uname)" = "Linux" ]; then \
+		mkdir -p ~/.config/synca; \
+		DEST="~/.config/synca/credentials.json"; \
+	else \
+		mkdir -p "$$APPDATA/synca"; \
+		DEST="$$APPDATA/synca/credentials.json"; \
+	fi
 	@echo ""
-	@echo "Next steps:"
+	@echo "Steps to configure Google Drive API:"
 	@echo "  1. Go to https://console.cloud.google.com"
-	@echo "  2. Create a project and enable Google Drive API"
-	@echo "  3. Create OAuth 2.0 credentials (Desktop app)"
-	@echo "  4. Download credentials.json → ~/.config/synca/credentials.json"
-	@echo "  5. Run:"
+	@echo "  2. Create a project and enable 'Google Drive API'"
+	@echo "  3. Go to 'Credentials' -> 'Create Credentials' -> 'OAuth 2.0 Client ID'"
+	@echo "  4. Select 'Desktop App' and download the JSON file"
+	@echo "  5. Move the downloaded file to: $$DEST"
+	@echo "  6. Run authentication:"
 	@echo "     make daemon && ./bin/synca-daemon-x86_64-unknown-linux-gnu connect google-drive"
 
 # ── Clean ──────────────────────────────────────────────────────

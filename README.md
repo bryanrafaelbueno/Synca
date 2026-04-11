@@ -235,13 +235,48 @@ synca status
 
 ## 🤝 Contributing
 
+1. Fork the project
+2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the Branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+---
+
+## 🛠️ Developer Guide & Portability
+
+If you are setting up Synca on a new machine, follow this checklist to ensure you have everything needed to compile and run the project.
+
+### 1. Core Prerequisites
+The following compilers and runtimes must be installed on your system:
+- **Go 1.22+**: [Download Go](https://go.dev/dl/)
+- **Rust (Latest Stable)**: [Install Rust](https://rustup.rs/)
+- **Node.js (v18+) & NPM**: [Download Node.js](https://nodejs.org/)
+
+### 2. System Dependencies (Linux)
+Tauri requires several development headers. On Ubuntu/Debian, install them with:
 ```bash
-git checkout -b feat/my-feature
-git commit -m "feat: my feature"
-git push
+sudo apt update
+sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
 ```
 
-Pull requests are welcome 🚀
+### 3. Build Tools
+- **Linux**: `make`, `gcc`, `pkg-config`.
+- **Windows**: Use **Git Bash** (recommended) or install `make` via [Chocolatey](https://chocolatey.org/) (`choco install make`).
+
+### 4. Cross-platform Bundling
+- **Windows Setup**: To build the `.exe` installer, you need **NSIS**.
+- **Windows from Linux**: Install `mingw-w64` and `nsis` (`sudo apt install nsis mingw-w64`).
+- **AppImage**: Download [linuxdeploy](https://github.com/linuxdeploy/linuxdeploy) and add it to your PATH or a `tools/` folder.
+
+---
+
+## 🏗️ Quick Setup Checklist
+1.  **Verify Environment**: Run `make check-deps` to see if anything is missing.
+2.  **Install Dependencies**: Run `make setup`.
+3.  **Config Credentials**: Run `make setup-creds` and follow instructions.
+4.  **Run Dev Mode**: Run `make dev`.
+5.  **Build Release**: Run `make release-linux` or `make release-windows`.
 
 ---
 
