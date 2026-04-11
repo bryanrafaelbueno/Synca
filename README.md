@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/SyncaWhite.png" alt="Synca Logo" width="480"/>
+  <img src="./assets/SyncaWhite.png" alt="Synca Logo" width="600"/>
 </p>
 
 <p align="center">
@@ -8,12 +8,28 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/status-MVP-blue"/>
+  <img src="https://img.shields.io/badge/status-MVP-orange"/>
   <img src="https://img.shields.io/badge/license-MIT-green"/>
   <img src="https://img.shields.io/badge/go-1.22+-00ADD8"/>
   <img src="https://img.shields.io/badge/tauri-2.x-FFC131"/>
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20windows-lightgrey"/>
 </p>
+
+---
+> [!WARNING]
+> **This project is currently in MVP (Minimum Viable Product) stage.**  
+> It is functional and usable, but may contain bugs, missing features, or breaking changes.  
+> Use it with caution in production environments.
+
+---
+
+## 📦 Download (MVP Release)
+
+👉 A compiled **MVP version is already available on GitHub Releases**.
+
+You can download ready-to-use builds for Linux and Windows without building from source:
+
+➡️ https://github.com/bryanrafaelbueno/synca/releases
 
 ---
 
@@ -44,15 +60,17 @@ It runs silently in the background (daemon), detects file changes, and keeps eve
 
 
 ```
+
 You save a file
-        ↓
+↓
 Synca detects the change
-        ↓
+↓
 Processes in background
-        ↓
+↓
 Uploads to Google Drive
-        ↓
+↓
 Interface updates automatically
+
 ```
 
 ---
@@ -60,6 +78,7 @@ Interface updates automatically
 ## 📁 Project Structure
 
 ```
+
 synca/
 ├── assets/                  # Logos and visual resources
 ├── bin/                     # Compiled daemon binaries
@@ -74,7 +93,8 @@ synca/
 │   └── package.json         # Frontend dependencies
 ├── Makefile                 # Build, dev, and release commands
 └── README.md
-```
+
+````
 
 ---
 
@@ -86,7 +106,7 @@ synca/
 git clone https://github.com/bryanrafaelbueno/synca
 cd synca
 make setup
-```
+````
 
 ---
 
@@ -94,9 +114,9 @@ make setup
 
 You will need to:
 
-- Create a project on Google Cloud
-- Enable the Google Drive API
-- Download `credentials.json` to:
+* Create a project on Google Cloud
+* Enable the Google Drive API
+* Download `credentials.json` to:
 
 ```
 ~/.config/synca/credentials.json
@@ -144,10 +164,10 @@ make app-dev
 
 <img width="1882" height="1011" alt="image" src="https://github.com/user-attachments/assets/43f39ece-8182-4c15-833d-c25428eaf677" />
 
-- Sync status
-- File list
-- Progress
-- Connection state
+* Sync status
+* File list
+* Progress
+* Connection state
 
 ---
 
@@ -172,12 +192,12 @@ Example:
 
 ## ⚔️ File Conflicts
 
-| Strategy   | Behavior                     |
-|------------|------------------------------|
-| KeepBoth   | Creates copy with timestamp  |
-| NewerWins  | Keeps the most recent        |
-| LocalWins  | Keeps the local version      |
-| RemoteWins | Keeps the remote version     |
+| Strategy   | Behavior                    |
+| ---------- | --------------------------- |
+| KeepBoth   | Creates copy with timestamp |
+| NewerWins  | Keeps the most recent       |
+| LocalWins  | Keeps the local version     |
+| RemoteWins | Keeps the remote version    |
 
 ---
 
@@ -194,22 +214,22 @@ synca status
 
 ## 🧱 Stack
 
-- Backend: Go
-- Watcher: fsnotify (inotify)
-- Frontend: Tauri + React
-- State: Zustand
-- Communication: WebSocket
+* Backend: Go
+* Watcher: fsnotify (inotify)
+* Frontend: Tauri + React
+* State: Zustand
+* Communication: WebSocket
 
 ---
 
 ## 🗺️ Roadmap
 
-- [x] Automatic upload
-- [x] Functional interface
-- [x] Conflicts
-- [ ] Full bidirectional sync
-- [ ] System tray
-- [ ] Multi-cloud (Rclone)
+* [x] Automatic upload
+* [x] Functional interface
+* [x] Conflicts
+* [ ] Full bidirectional sync
+* [ ] System tray
+* [ ] Multi-cloud (Rclone)
 
 ---
 
@@ -231,10 +251,5 @@ MIT © Synca Contributors
 
 ---
 
-## 💡 Note
-
-Synca is still in MVP phase — bugs may occur, but it is already fully functional for real-world use.
-
----
-
 <p align="center">🇧🇷 Made in Brazil 🇧🇷</p>
+```
