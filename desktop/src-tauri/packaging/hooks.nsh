@@ -1,4 +1,4 @@
-!macro customUnInstall
+!macro NSIS_HOOK_PREUNINSTALL
   DetailPrint "Stopping Synca processes..."
   # Kill the main UI app
   nsExec::Exec 'taskkill /F /IM Synca.exe /T'

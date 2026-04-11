@@ -37,14 +37,13 @@
     "windows": {
       "nsis": {
         "installMode": "currentUser",
-        "customUninstallerPath": "packaging/uninstall.nsi"
+        "installerHooks": "packaging/hooks.nsh"
       }
     },
     "linux": {
       "deb": {
         "postInstallScript": "packaging/postinst",
         "postRemoveScript": "packaging/postrm",
-        "preRemoveScript": "packaging/prerm",
         "files": {
           "/usr/lib/systemd/user/synca.service": "packaging/synca.service",
           "/usr/lib/systemd/user-preset/99-synca.preset": "packaging/99-synca.preset"
