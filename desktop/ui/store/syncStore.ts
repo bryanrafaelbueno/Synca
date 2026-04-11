@@ -62,11 +62,12 @@ export const useSyncStore = create<SyncStore>((set) => ({
 
 // Derived selectors
 export const selectFiles = (state: SyncStore) =>
-  (state.snapshot?.files ?? []).filter((f) =>
-    state.searchQuery
-      ? f.local_path.toLowerCase().includes(state.searchQuery.toLowerCase())
-      : true
-  )
+  (state.snapshot?.files ?? []).filter((f) => {
+    if (!state.searchQuery) return true;
+    const query = state.searchQuery.toLowerCase().replace(/\\/g, '/');
+    const path = f.local_path.toLowerCase().replace(/\\/g, '/');
+    return path.includes(query);
+  })
 
 export const selectStats = (state: SyncStore) => ({
   totalBytes: state.snapshot?.total_bytes ?? 0,

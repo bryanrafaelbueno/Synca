@@ -76,7 +76,7 @@ function FileIcon({ path }: { path: string }) {
 }
 
 function FileRow({ entry, depth = 0 }: { entry: FileEntry, depth?: number }) {
-  const fileName = entry.local_path.split('/').pop() ?? entry.local_path
+  const fileName = entry.local_path.split(/[/\\]/).pop() ?? entry.local_path
 
   const lastSync = entry.last_sync
     ? new Date(entry.last_sync).toLocaleString('en-US', {
@@ -159,12 +159,13 @@ export function FileList({ sendCommand }: FileListProps) {
   const rootNode: TreeNode = { name: 'root', path: '', isFolder: true, children: {} };
 
   files.forEach(f => {
-    const parts = f.local_path.split('/').filter(Boolean);
+    const parts = f.local_path.split(/[/\\]/).filter(Boolean);
     let current = rootNode;
     
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
       const isFile = (i === parts.length - 1);
+      // Construct a consistent internal tree path using forward slash
       const nodePath = '/' + parts.slice(0, i + 1).join('/');
       
       if (!current.children[part]) {
