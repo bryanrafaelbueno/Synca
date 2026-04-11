@@ -30,7 +30,7 @@ type Client struct {
 	svc *gdrive.Service
 }
 
-// ✅ Agora usa o auth centralizado (SEM duplicação, SEM bug)
+// Uses the centralized auth module (no duplication, no bugs)
 func NewClient(ctx context.Context) (*Client, error) {
 	svc, err := auth.NewDriveService(ctx)
 	if err != nil {

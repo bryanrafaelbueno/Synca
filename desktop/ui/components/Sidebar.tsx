@@ -15,7 +15,7 @@ function formatBytes(bytes: number): string {
 function formatTime(iso: string | null): string {
   if (!iso) return '—'
   const d = new Date(iso)
-  return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
 export function Sidebar({ sendCommand }: Props) {
@@ -35,25 +35,25 @@ export function Sidebar({ sendCommand }: Props) {
       </div>
 
       <div className="sidebar-section">
-        <div className="section-label">Armazenamento</div>
+        <div className="section-label">Storage</div>
         <div className="stat-card">
           <div className="stat-value">{formatBytes(stats.totalBytes)}</div>
-          <div className="stat-label">sincronizados</div>
+          <div className="stat-label">synced</div>
         </div>
       </div>
 
       <div className="sidebar-section">
-        <div className="section-label">Progresso</div>
+        <div className="section-label">Progress</div>
         <div className="progress-block">
           <div className="progress-bar-bg">
             <div className="progress-bar-fill" style={{ width: `${syncPct}%` }} />
           </div>
-          <div className="progress-label">{stats.syncedFiles} / {stats.totalFiles} arquivos</div>
+          <div className="progress-label">{stats.syncedFiles} / {stats.totalFiles} files</div>
         </div>
       </div>
 
       <div className="sidebar-section">
-        <div className="section-label">Última sync</div>
+        <div className="section-label">Last sync</div>
         <div className="last-sync">{formatTime(stats.lastUpdated)}</div>
       </div>
 
@@ -64,7 +64,7 @@ export function Sidebar({ sendCommand }: Props) {
           onClick={() => {
             import('@tauri-apps/api/core').then(({ invoke }) => invoke('restart_daemon'));
           }}
-          title="Reinicia o daemon (sidecar) instantaneamente via Tauri"
+          title="Restart the daemon (sidecar) instantly via Tauri"
         >
           <svg
             className="btn-action-icon"
@@ -83,7 +83,7 @@ export function Sidebar({ sendCommand }: Props) {
             <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
             <path d="M3 21v-5h5" />
           </svg>
-          Atualizar
+          Refresh
         </button>
       </div>
 

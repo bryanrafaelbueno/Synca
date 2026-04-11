@@ -72,10 +72,10 @@ fn start_daemon(app: tauri::AppHandle, state: tauri::State<'_, DaemonState>) -> 
                     *child_guard = Some(child);
                     Ok(())
                 }
-                Err(e) => Err(format!("Falha ao spawnar sidecar (daemon): {}", e))
+                Err(e) => Err(format!("Failed to spawn sidecar (daemon): {}", e))
             }
         }
-        Err(e) => Err(format!("Falha ao instanciar sidecar (daemon): {}", e))
+        Err(e) => Err(format!("Failed to instantiate sidecar (daemon): {}", e))
     }
 }
 

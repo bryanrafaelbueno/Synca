@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  <b>Sincronização de arquivos com o Google Drive no Linux e Windows</b><br/>
-  Simples, leve e open source, uma alternativa gratuita ao Insync
+  <b>Google Drive file synchronization for Linux and Windows</b><br/>
+  Simple, lightweight, and open source — a free alternative to Insync
 </p>
 
 <p align="center">
@@ -17,70 +17,70 @@
 
 ---
 
-## ✨ O que é o Synca?
+## ✨ What is Synca?
 
-O **Synca** é um cliente de sincronização que conecta suas pastas locais ao Google Drive automaticamente.
+**Synca** is a sync client that automatically connects your local folders to Google Drive.
 
-Ele roda silenciosamente no fundo (daemon), detecta mudanças nos arquivos e mantém tudo sincronizado em tempo real.
+It runs silently in the background (daemon), detects file changes, and keeps everything synchronized in real time.
 
-💡 Ideal para quem quer algo leve, open source e sem depender de soluções pagas.
+💡 Ideal for anyone who wants something lightweight, open source, and without relying on paid solutions.
 
 ---
 
 ## 🚀 Features
 
-- 🔄 Sincronização automática (quase em tempo real)
-- 📂 Monitoramento recursivo de pastas
-- ⚡ Baixo consumo de memória (Go + Tauri)
-- 🔐 Login seguro com Google (OAuth2)
-- 🧠 Resolução inteligente de conflitos
-- 📡 Comunicação em tempo real (WebSocket)
-- 🖥️ Interface leve e nativa
-- 🪟 Suporte a Windows e Linux
+- 🔄 Automatic synchronization (near real-time)
+- 📂 Recursive folder monitoring
+- ⚡ Low memory usage (Go + Tauri)
+- 🔐 Secure Google login (OAuth2)
+- 🧠 Intelligent conflict resolution
+- 📡 Real-time communication (WebSocket)
+- 🖥️ Lightweight native interface
+- 🪟 Windows and Linux support
 
 ---
 
-## 🧠 Como funciona
+## 🧠 How it works
 
 
 ```
-Você salva um arquivo
+You save a file
         ↓
-Synca detecta a mudança
+Synca detects the change
         ↓
-Processa em background
+Processes in background
         ↓
-Envia para o Google Drive
+Uploads to Google Drive
         ↓
-Interface atualiza automaticamente
+Interface updates automatically
 ```
 
 ---
 
-## 📁 Estrutura do Projeto
+## 📁 Project Structure
 
 ```
 synca/
-├── assets/                  # Logos e recursos visuais
-├── bin/                     # Binários compilados do daemon
-├── daemon/                  # Backend em Go (daemon de sincronização)
-│   ├── cmd/synca/           # Entrypoint do CLI
-│   └── internal/            # Lógica interna (watcher, sync, API)
-├── desktop/                 # App desktop (Tauri + React)
-│   ├── ui/                  # Frontend React (componentes, hooks, store)
-│   ├── src-tauri/           # Backend Rust do Tauri (obrigatório esse nome)
-│   ├── index.html           # Entrypoint do Vite
-│   ├── vite.config.ts       # Configuração do Vite
-│   └── package.json         # Dependências do frontend
-├── Makefile                 # Comandos de build, dev e release
+├── assets/                  # Logos and visual resources
+├── bin/                     # Compiled daemon binaries
+├── daemon/                  # Go backend (sync daemon)
+│   ├── cmd/synca/           # CLI entrypoint
+│   └── internal/            # Internal logic (watcher, sync, API)
+├── desktop/                 # Desktop app (Tauri + React)
+│   ├── ui/                  # React frontend (components, hooks, store)
+│   ├── src-tauri/           # Tauri Rust backend (this name is required)
+│   ├── index.html           # Vite entrypoint
+│   ├── vite.config.ts       # Vite configuration
+│   └── package.json         # Frontend dependencies
+├── Makefile                 # Build, dev, and release commands
 └── README.md
 ```
 
 ---
 
-## 📦 Instalação
+## 📦 Installation
 
-### 1. Clone o projeto
+### 1. Clone the project
 
 ```bash
 git clone https://github.com/bryanrafaelbueno/synca
@@ -90,41 +90,41 @@ make setup
 
 ---
 
-### 2. Configure o Google Drive
+### 2. Configure Google Drive
 
-Você vai precisar:
+You will need to:
 
-- Criar um projeto no Google Cloud
-- Ativar a Google Drive API
-- Baixar o `credentials.json` para:
+- Create a project on Google Cloud
+- Enable the Google Drive API
+- Download `credentials.json` to:
 
 ```
 ~/.config/synca/credentials.json
-ou
-C:\Users\seuusuario\.config\synca\credentials.json
+or
+C:\Users\yourusername\.config\synca\credentials.json
 ```
 
 ---
 
-### 3. Conectar conta
+### 3. Connect account
 
 ```bash
 ./bin/synca-daemon connect google-drive
 ```
 
-👉 Vai abrir o navegador para login
+👉 This will open the browser for login
 
 ---
 
-### 4. Escolher pasta
+### 4. Choose folder
 
 ```bash
-./bin/synca-daemon watch ~/Documentos
+./bin/synca-daemon watch ~/Documents
 ```
 
 ---
 
-### 5. Iniciar Synca
+### 5. Start Synca
 
 ```bash
 ./bin/synca-daemon daemon
@@ -132,7 +132,7 @@ C:\Users\seuusuario\.config\synca\credentials.json
 
 ---
 
-### 6. Abrir interface
+### 6. Open interface
 
 ```bash
 make app-dev
@@ -142,12 +142,12 @@ make app-dev
 
 ## 🖥️ Interface
 
-- Status da sincronização
-- Lista de arquivos
-- Progresso
-- Estado da conexão
+- Sync status
+- File list
+- Progress
+- Connection state
 
-*(adicione screenshots depois)*
+*(add screenshots later)*
 
 ```
 /assets/screenshot.png
@@ -155,33 +155,33 @@ make app-dev
 
 ---
 
-## ⚙️ Configuração
+## ⚙️ Configuration
 
-Arquivo:
+File:
 
 ```
 ~/.config/synca/config.json
 ```
 
-Exemplo:
+Example:
 
 ```json
 {
-  "watch_paths": ["/home/user/Documentos"],
+  "watch_paths": ["/home/user/Documents"],
   "log_level": "info"
 }
 ```
 
 ---
 
-## ⚔️ Conflitos de arquivo
+## ⚔️ File Conflicts
 
-| Estratégia | Comportamento |
-|-----------|--------------|
-| KeepBoth | Cria cópia com timestamp |
-| NewerWins | Mantém o mais recente |
-| LocalWins | Mantém o local |
-| RemoteWins | Mantém o remoto |
+| Strategy   | Behavior                     |
+|------------|------------------------------|
+| KeepBoth   | Creates copy with timestamp  |
+| NewerWins  | Keeps the most recent        |
+| LocalWins  | Keeps the local version      |
+| RemoteWins | Keeps the remote version     |
 
 ---
 
@@ -190,7 +190,7 @@ Exemplo:
 ```bash
 synca daemon
 synca connect google-drive
-synca watch ~/pasta
+synca watch ~/folder
 synca status
 ```
 
@@ -201,40 +201,40 @@ synca status
 - Backend: Go
 - Watcher: fsnotify (inotify)
 - Frontend: Tauri + React
-- Estado: Zustand
-- Comunicação: WebSocket
+- State: Zustand
+- Communication: WebSocket
 
 ---
 
 ## 🗺️ Roadmap
 
-- [x] Upload automático
-- [x] Interface funcional
-- [x] Conflitos
-- [ ] Sync bidirecional completo
+- [x] Automatic upload
+- [x] Functional interface
+- [x] Conflicts
+- [ ] Full bidirectional sync
 - [ ] System tray
 - [ ] Multi-cloud (Rclone)
 
 ---
 
-## 🤝 Contribuindo
+## 🤝 Contributing
 
 ```bash
-git checkout -b feat/minha-feature
-git commit -m "feat: minha feature"
+git checkout -b feat/my-feature
+git commit -m "feat: my feature"
 git push
 ```
 
-Pull requests são bem-vindos 🚀
+Pull requests are welcome 🚀
 
 ---
 
-## 📄 Licença
+## 📄 License
 
 MIT © Synca Contributors
 
 ---
 
-## 💡 Observação
+## 💡 Note
 
-Synca ainda está em fase MVP ,  bugs podem acontecer, mas já é totalmente funcional para uso real.
+Synca is still in MVP phase — bugs may occur, but it is already fully functional for real-world use.

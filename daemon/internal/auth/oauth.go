@@ -68,8 +68,8 @@ func RunOAuthFlow() error {
 		}
 
 		fmt.Fprintf(w, `<html><body style="font-family:sans-serif;padding:40px">
-		<h2>✓ Synca conectado ao Google Drive!</h2>
-		<p>Você pode fechar esta janela.</p>
+		<h2>✓ Synca connected to Google Drive!</h2>
+		<p>You can close this window.</p>
 		</body></html>`)
 
 		codeCh <- code

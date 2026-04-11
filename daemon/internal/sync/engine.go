@@ -248,7 +248,7 @@ func (e *Engine) uploadFile(ctx context.Context, localPath string) {
 
 	var remoteFile *drive.File
 	if remoteID == "" {
-		// Busca ativamente no Drive se o arquivo já existe mas não estava na memória local (ex: restart)
+		// Actively search Drive if the file already exists but was not in local memory (e.g. restart)
 		remoteFile, _ = e.drive.GetFileByNameInFolder(ctx, remoteName, parentID)
 		if remoteFile != nil {
 			remoteID = remoteFile.ID
@@ -259,7 +259,7 @@ func (e *Engine) uploadFile(ctx context.Context, localPath string) {
 		e.mu.RUnlock()
 	}
 
-	// Se o arquivo existe no Drive, mas não na memória (Restart), e é identico (MD5):
+	// If file exists on Drive but not in memory (restart), and is identical (MD5):
 	if remoteFile != nil && entry == nil && remoteFile.MD5 == localMD5 {
 		e.mu.Lock()
 		e.files[localPath] = &FileEntry{
@@ -273,7 +273,7 @@ func (e *Engine) uploadFile(ctx context.Context, localPath string) {
 		}
 		e.mu.Unlock()
 		e.setStatus(localPath, StatusSynced, "")
-		return // Sincronização passiva sem upload duplo
+		return // Passive sync without duplicate upload
 	}
 
 	// Check for conflict
@@ -563,18 +563,18 @@ func (e *Engine) AddWatchRoot(ctx context.Context, raw string) error {
 	e.cfg.AddWatchPath(raw)
 	if len(e.cfg.WatchPaths) == before {
 		e.pathsMu.Unlock()
-		return fmt.Errorf("Esta pasta já está na lista de sincronização")
+		return fmt.Errorf("This folder is already in the sync list")
 	}
 	root := e.cfg.WatchPaths[len(e.cfg.WatchPaths)-1]
 
 	if fi, err := os.Stat(root); err != nil {
 		e.cfg.RemoveWatchPath(root)
 		e.pathsMu.Unlock()
-		return fmt.Errorf("Não foi possível acessar a pasta: %w", err)
+		return fmt.Errorf("Could not access the folder: %w", err)
 	} else if !fi.IsDir() {
 		e.cfg.RemoveWatchPath(root)
 		e.pathsMu.Unlock()
-		return fmt.Errorf("Selecione uma pasta (diretório)")
+		return fmt.Errorf("Please select a folder (directory)")
 	}
 
 	if err := e.cfg.Save(); err != nil {
@@ -586,11 +586,11 @@ func (e *Engine) AddWatchRoot(ctx context.Context, raw string) error {
 		e.cfg.RemoveWatchPath(root)
 		_ = e.cfg.Save()
 		e.pathsMu.Unlock()
-		return fmt.Errorf("Não foi possível monitorar a pasta: %w", err)
+		return fmt.Errorf("Could not watch the folder: %w", err)
 	}
 	e.pathsMu.Unlock()
 
-	log.Info().Str("path", root).Msg("Pasta adicionada à sincronização (UI)")
+	log.Info().Str("path", root).Msg("Folder added to sync (UI)")
 	go e.indexNewWatchRoot(ctx, root)
 	return nil
 }
@@ -603,7 +603,7 @@ func (e *Engine) indexNewWatchRoot(ctx context.Context, watchPath string) {
 		if d.IsDir() {
 			if path != watchPath {
 				if _, err := e.ensureRemoteFolderTree(ctx, path); err != nil {
-					log.Error().Err(err).Str("path", path).Msg("Falha ao sincronizar estrutura de pastas")
+					log.Error().Err(err).Str("path", path).Msg("Failed to sync folder structure")
 				}
 			}
 			return nil

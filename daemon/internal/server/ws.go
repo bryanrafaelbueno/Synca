@@ -77,7 +77,7 @@ func (s *WebSocketServer) handleWS(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 	}()
 
-	// snapshot inicial
+	// initial snapshot
 	snap := s.engine.Snapshot()
 	if data, err := json.Marshal(snap); err == nil {
 		_ = conn.WriteMessage(websocket.TextMessage, data)
@@ -115,7 +115,7 @@ func (s *WebSocketServer) handleCommand(conn *websocket.Conn, msg []byte) {
 		}
 	case "add_watch":
 		if strings.TrimSpace(in.Path) == "" {
-			s.writeWSError(conn, "caminho da pasta ausente")
+			s.writeWSError(conn, "folder path is missing")
 			return
 		}
 		if err := s.engine.AddWatchRoot(context.Background(), in.Path); err != nil {
@@ -163,7 +163,7 @@ func (s *WebSocketServer) broadcastLoop() {
 	}
 }
 
-// PrintStatus conecta ao daemon e imprime status
+// PrintStatus connects to the daemon and prints status
 func PrintStatus() error {
 	conn, _, err := websocket.DefaultDialer.Dial("ws://localhost:7373/ws", nil)
 	if err != nil {

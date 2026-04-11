@@ -19,7 +19,7 @@ async function pickWatchFolder(): Promise<string | null> {
     const selected = await open({
       directory: true,
       multiple: false,
-      title: 'Escolher pasta para sincronizar',
+      title: 'Choose folder to sync',
     })
     console.log("Dialog result:", selected);
     if (!selected) return null;
@@ -28,17 +28,17 @@ async function pickWatchFolder(): Promise<string | null> {
     return null;
   } catch (err) {
     console.error("Dialog error:", err);
-    const raw = window.prompt('Caminho absoluto da pasta:')
+    const raw = window.prompt('Absolute folder path:')
     return raw?.trim() || null
   }
 }
 
 const STATUS_LABELS: Record<FileStatus, string> = {
-  synced: 'sincronizado',
-  syncing: 'sincronizando…',
-  queued: 'na fila',
-  conflict: 'conflito',
-  error: 'erro',
+  synced: 'synced',
+  syncing: 'syncing…',
+  queued: 'queued',
+  conflict: 'conflict',
+  error: 'error',
 }
 
 function StatusPill({ status }: { status: FileStatus }) {
@@ -79,7 +79,7 @@ function FileRow({ entry, depth = 0 }: { entry: FileEntry, depth?: number }) {
   const fileName = entry.local_path.split('/').pop() ?? entry.local_path
 
   const lastSync = entry.last_sync
-    ? new Date(entry.last_sync).toLocaleString('pt-BR', {
+    ? new Date(entry.last_sync).toLocaleString('en-US', {
         day: '2-digit', month: '2-digit',
         hour: '2-digit', minute: '2-digit',
       })
@@ -208,12 +208,12 @@ export function FileList({ sendCommand }: FileListProps) {
     <div className="file-list">
       <div className="file-list-header">
         <div className="header-title">
-          <span>Arquivos</span>
+          <span>Files</span>
           {counts.conflict > 0 && (
-            <span className="badge-warn">{counts.conflict} conflito{counts.conflict > 1 ? 's' : ''}</span>
+            <span className="badge-warn">{counts.conflict} conflict{counts.conflict > 1 ? 's' : ''}</span>
           )}
           {counts.error > 0 && (
-            <span className="badge-error">{counts.error} erro{counts.error > 1 ? 's' : ''}</span>
+            <span className="badge-error">{counts.error} error{counts.error > 1 ? 's' : ''}</span>
           )}
         </div>
         <div className="header-tools">
@@ -225,7 +225,7 @@ export function FileList({ sendCommand }: FileListProps) {
             <input
               className="search-input"
               type="text"
-              placeholder="Buscar arquivos…"
+              placeholder="Search files…"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
             />
@@ -233,7 +233,7 @@ export function FileList({ sendCommand }: FileListProps) {
           <button
             type="button"
             className="btn-add-watch"
-            title="Adicionar pasta à sincronização"
+            title="Add folder to sync"
             disabled={!connected}
             onClick={() => void onAddWatchFolder()}
           >
@@ -242,7 +242,7 @@ export function FileList({ sendCommand }: FileListProps) {
               <line x1="12" y1="11" x2="12" y2="17" />
               <line x1="9" y1="14" x2="15" y2="14" />
             </svg>
-            <span className="btn-add-watch-label">Pasta</span>
+            <span className="btn-add-watch-label">Folder</span>
           </button>
         </div>
       </div>
@@ -250,7 +250,7 @@ export function FileList({ sendCommand }: FileListProps) {
       {lastWsError && (
         <div className="folder-action-banner" role="status">
           {lastWsError}
-          <button type="button" className="folder-action-dismiss" onClick={() => setLastWsError(null)} aria-label="Fechar">
+          <button type="button" className="folder-action-dismiss" onClick={() => setLastWsError(null)} aria-label="Close">
             ×
           </button>
         </div>
@@ -260,19 +260,19 @@ export function FileList({ sendCommand }: FileListProps) {
         {!connected && (
           <div className="empty-state">
             <div className="empty-icon">⏳</div>
-            <div className="empty-title">Conectando ao daemon…</div>
-            <div className="empty-sub">Aguarde um momento</div>
+            <div className="empty-title">Connecting to daemon…</div>
+            <div className="empty-sub">Please wait</div>
           </div>
         )}
 
         {connected && files.length === 0 && (
           <div className="empty-state">
             <div className="empty-icon">📂</div>
-            <div className="empty-title">Nenhum arquivo encontrado</div>
+            <div className="empty-title">No files found</div>
             <div className="empty-sub">
               {searchQuery
-                ? 'Tente outro termo de busca'
-                : 'Clique em Pasta ao lado da busca ou use synca watch ~/pasta no terminal'}
+                ? 'Try a different search term'
+                : 'Click Folder next to the search bar or use synca watch ~/folder in the terminal'}
             </div>
           </div>
         )}

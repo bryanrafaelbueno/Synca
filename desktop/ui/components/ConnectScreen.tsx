@@ -18,8 +18,8 @@ export function ConnectScreen({ setupState, error, checkSetup }: ConnectScreenPr
       await invoke('login_google_drive');
       checkSetup(); 
     } catch (e) {
-      console.error("Falha fatal:", e);
-      alert("Falha no login: " + e);
+      console.error("Fatal error:", e);
+      alert("Login failed: " + e);
     } finally {
       setIsLoggingIn(false);
     }
@@ -33,12 +33,12 @@ export function ConnectScreen({ setupState, error, checkSetup }: ConnectScreenPr
       });
       if (selected && typeof selected === 'string') {
         await invoke('save_credentials', { sourcePath: selected });
-        alert("Credenciais salvas com sucesso!");
+        alert("Credentials saved successfully!");
         checkSetup();
       }
     } catch (e) {
       console.error(e);
-      alert("Erro ao salvar arquivo: " + e);
+      alert("Error saving file: " + e);
     }
   };
 
@@ -52,27 +52,27 @@ export function ConnectScreen({ setupState, error, checkSetup }: ConnectScreenPr
           </svg>
         </div>
         <h2 className="connect-title">
-           {setupState === 'checking' ? "Iniciando Synca..." : 
-            setupState === 'needs_creds' ? "Configuração Inicial" : 
-            setupState === 'needs_token' ? "Falta Autenticar" : "Conexão Pendente"}
+           {setupState === 'checking' ? "Starting Synca..." : 
+            setupState === 'needs_creds' ? "Initial Setup" : 
+            setupState === 'needs_token' ? "Authentication Required" : "Connection Pending"}
         </h2>
         
         <p className="connect-msg">
-           {setupState === 'checking' ? "Procurando configurações salvas..." :
-            setupState === 'needs_creds' ? "Você precisa fazer upload do arquivo credentials.json do Google Cloud." : 
-            setupState === 'needs_token' ? "Faça login no Google Drive para autorizar o Synca." : error}
+           {setupState === 'checking' ? "Looking for saved settings..." :
+            setupState === 'needs_creds' ? "You need to upload the credentials.json file from Google Cloud." : 
+            setupState === 'needs_token' ? "Log in to Google Drive to authorize Synca." : error}
         </p>
         
         <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {setupState === 'needs_creds' && (
             <button className="btn-connect" onClick={handleUploadCredentials}>
-              Fazer Upload (credentials.json)
+              Upload (credentials.json)
             </button>
           )}
 
           {setupState === 'needs_token' && (
             <button className="btn-connect" onClick={handleLogin} disabled={isLoggingIn}>
-              {isLoggingIn ? "Autenticando na Web..." : "Logar no Google Drive"}
+              {isLoggingIn ? "Authenticating on the Web..." : "Log in to Google Drive"}
             </button>
           )}
 
@@ -82,7 +82,7 @@ export function ConnectScreen({ setupState, error, checkSetup }: ConnectScreenPr
               onClick={checkSetup}
               style={{ opacity: 0.8, backgroundColor: 'transparent', border: '1px solid currentColor' }}
             >
-              Recarregar
+              Reload
             </button>
           )}
         </div>

@@ -42,9 +42,9 @@ release-windows: daemon-windows
 
 # ── Dev: run app ───────────────────────────────────────────────
 dev: daemon
-	@echo "Limpeza inicial (fechando daemons zumbis se existirem)..."
+	@echo "Initial cleanup (killing zombie daemons if any)..."
 	-pkill -f synca-daemon || true
-	@echo "Starting Tauri app (Daemon é agora iniciado nativamente pelo Sidecar)..."
+	@echo "Starting Tauri app (Daemon is now started natively by Sidecar)..."
 	cd desktop && npm run tauri dev
 
 # ── Full build ─────────────────────────────────────────────────
