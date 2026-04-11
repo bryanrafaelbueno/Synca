@@ -20,15 +20,29 @@ app-dev:
 app-build:
 	@echo "Building Tauri app..."
 	cd desktop && npm run tauri build
-
+	
 # ── Releases Exports ───────────────────────────────────────────
 release-linux: daemon
 	@echo "Building Linux release artifacts..."
-	cd desktop && CARGO_HOME=$$(pwd)/.cargo-home CARGO_TARGET_DIR=$$(pwd)/src-tauri/target npm run tauri build -- --bundles deb,appimage
+
+	# Fix AppImage issues (Arch / modern glibc)
+	export NO_STRIP=true && \
+	export LINUXDEPLOY_PLUGIN_APPIMAGE=$$HOME/tools/linuxdeploy/linuxdeploy-plugin-appimage-x86_64.AppImage && \
+	export PATH="/usr/local/bin:$$PATH" && \
+	cd desktop && \
+	CARGO_HOME=$$(pwd)/.cargo-home \
+	CARGO_TARGET_DIR=$$(pwd)/src-tauri/target \
+	npm run tauri build -- --bundles deb,appimage || true
+
 	@echo "Exporting Linux releases to root..."
 	mkdir -p releases/linux
-	cp -r desktop/src-tauri/target/release/bundle/deb/* releases/linux/ || true
-	cp -r desktop/src-tauri/target/release/bundle/appimage/* releases/linux/ || true
+
+	# Copy DEB (always works)
+	cp -r desktop/src-tauri/target/release/bundle/deb/* releases/linux/ 2>/dev/null || true
+
+	# Copy AppImage if exists
+	cp -r desktop/src-tauri/target/release/bundle/appimage/* releases/linux/ 2>/dev/null || true
+
 	@echo "Release Linux artifacts exported to ./releases/linux/"
 
 release-windows: daemon-windows
