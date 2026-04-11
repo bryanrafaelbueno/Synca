@@ -238,3 +238,7 @@ MIT © Synca Contributors
 ## 💡 Note
 
 Synca is still in MVP phase — bugs may occur, but it is already fully functional for real-world use.
+
+---
+
+<p align="center">🇧🇷 Made in Brazil 🇧🇷</p>
