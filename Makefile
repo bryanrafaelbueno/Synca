@@ -49,6 +49,8 @@ appimage-manual:
 # ── Releases (Linux) ───────────────────────────────────────────
 release-linux: daemon
 	@echo "Building Linux release artifacts..."
+	rm -rf desktop/src-tauri/target/release/bundle/deb/*
+	rm -rf desktop/src-tauri/target/release/bundle/appimage/*
 
 	# Build only DEB with Tauri (stable)
 	cd desktop && \
@@ -61,6 +63,7 @@ release-linux: daemon
 
 	@echo "Exporting Linux releases to root..."
 	mkdir -p releases/linux
+	rm -rf releases/linux/*
 
 	# Copy DEB
 	cp -r desktop/src-tauri/target/release/bundle/deb/* releases/linux/ 2>/dev/null || true
@@ -73,6 +76,7 @@ release-linux: daemon
 # ── Releases (Windows) ─────────────────────────────────────────
 release-windows: daemon-windows
 	@echo "Building Windows release artifacts..."
+	rm -rf desktop/src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/*
 	cd desktop && \
 	CARGO_HOME=$$(pwd)/.cargo-home \
 	CARGO_TARGET_DIR=$$(pwd)/src-tauri/target \
@@ -80,6 +84,7 @@ release-windows: daemon-windows
 
 	@echo "Exporting Windows releases to root..."
 	mkdir -p releases/windows
+	rm -rf releases/windows/*
 
 	cp -r desktop/src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/*.exe releases/windows/ || true
 
