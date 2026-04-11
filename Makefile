@@ -35,6 +35,12 @@ appimage-manual:
 	cp desktop/src-tauri/target/release/synca desktop/src-tauri/target/release/bundle/appimage/Synca.AppDir/usr/bin/
 	cp bin/synca-daemon-x86_64-unknown-linux-gnu desktop/src-tauri/target/release/bundle/appimage/Synca.AppDir/usr/bin/synca-daemon
 
+	# Copy metadata (desktop file and icon) from the built DEB
+	mkdir -p desktop/src-tauri/target/release/bundle/appimage/Synca.AppDir/usr/share/applications
+	mkdir -p desktop/src-tauri/target/release/bundle/appimage/Synca.AppDir/usr/share/icons/hicolor/2048x2048/apps
+	cp desktop/src-tauri/target/release/bundle/deb/*/data/usr/share/applications/Synca.desktop desktop/src-tauri/target/release/bundle/appimage/Synca.AppDir/usr/share/applications/
+	cp desktop/src-tauri/target/release/bundle/deb/*/data/usr/share/icons/hicolor/2048x2048/apps/synca.png desktop/src-tauri/target/release/bundle/appimage/Synca.AppDir/usr/share/icons/hicolor/2048x2048/apps/
+
 	@echo "Building AppImage manually with linuxdeploy..."
 
 	cd desktop/src-tauri/target/release/bundle/appimage && \
