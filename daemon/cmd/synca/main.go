@@ -17,8 +17,9 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "synca",
-	Short: "Synca — cloud sync daemon for Linux",
+	Use:     "synca",
+	Short:   "Synca — cloud sync daemon for Linux",
+	Version: "0.2.0",
 }
 
 var daemonCmd = &cobra.Command{

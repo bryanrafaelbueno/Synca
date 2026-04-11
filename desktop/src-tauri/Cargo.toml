@@ -1,6 +1,6 @@
 [package]
 name = "synca"
-version = "0.1.0"
+version = "0.2.0"
 description = "Synca desktop client (Tauri)"
 authors = ["Bryan Rafael <brthy467@gmail.com>"]
 license = ""
