@@ -4,6 +4,7 @@
 mod cli;
 
 use tauri_plugin_shell::ShellExt;
+use tauri_plugin_dialog::DialogExt;
 use tauri::{Manager, menu::{MenuBuilder, MenuItemBuilder}, tray::TrayIconBuilder, WindowEvent};
 
 /// Detecta se está rodando como AppImage
@@ -64,6 +65,24 @@ struct DaemonState(Mutex<Option<CommandChild>>);
 #[tauri::command]
 fn is_appimage_cmd() -> bool {
     is_appimage()
+}
+
+/// Folder picker implemented on the Rust side to avoid JS capability issues
+#[tauri::command]
+async fn pick_folder_dialog(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.dialog()
+        .file()
+        .set_title("Choose folder to sync")
+        .pick_folder(move |path: Option<tauri_plugin_dialog::FilePath>| {
+            use tauri_plugin_dialog::FilePath;
+            let result = path.and_then(|p| match p {
+                FilePath::Path(pb) => pb.to_str().map(|s| s.to_string()),
+                FilePath::Url(u) => Some(u.to_string()),
+            });
+            let _ = tx.send(result);
+        });
+    Ok(rx.recv().map_err(|e| format!("Dialog channel error: {e}"))?)
 }
 
 #[tauri::command]
@@ -256,7 +275,8 @@ fn main() {
             has_token,
             start_daemon,
             restart_daemon,
-            is_appimage_cmd
+            is_appimage_cmd,
+            pick_folder_dialog
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -14,23 +14,44 @@ type TreeNode = {
 };
 
 async function pickWatchFolder(): Promise<string | null> {
+  // Try Rust-side dialog first (bypasses JS capability issues)
   try {
-    const { open } = await import('@tauri-apps/plugin-dialog')
-    const selected = await open({
+    const { invoke } = await import('@tauri-apps/api/core');
+    console.log('[pickWatchFolder] Calling Rust dialog...');
+    const result: string | null = await invoke('pick_folder_dialog');
+    console.log('[pickWatchFolder] Rust dialog result:', result);
+    if (result) return result;
+    return null;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[pickWatchFolder] Rust dialog failed:', msg);
+  }
+
+  // Fallback: JS dialog plugin
+  try {
+    const dialog = await import('@tauri-apps/plugin-dialog');
+    const selected = await dialog.open({
       directory: true,
       multiple: false,
       title: 'Choose folder to sync',
-    })
-    console.log("Dialog result:", selected);
+    }) as string | string[] | null;
     if (!selected) return null;
     if (typeof selected === 'string') return selected;
-    if (Array.isArray(selected) && (selected as any[]).length > 0) return String((selected as any[])[0]);
+    if (Array.isArray(selected) && selected.length > 0) return selected[0];
     return null;
   } catch (err) {
-    console.error("Dialog error:", err);
-    const raw = window.prompt('Absolute folder path:')
-    return raw?.trim() || null
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[pickWatchFolder] JS dialog also failed:', msg);
   }
+
+  // Last resort: manual path entry
+  const raw = window.prompt(
+    'Native folder picker is not available.\n\n' +
+    'Please enter the absolute folder path to sync:\n\n' +
+    'Linux:  /home/user/Documents\n' +
+    'Windows: C:\\Users\\user\\Documents'
+  );
+  return raw?.trim() || null;
 }
 
 const STATUS_LABELS: Record<FileStatus, string> = {
