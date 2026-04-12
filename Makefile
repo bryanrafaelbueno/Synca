@@ -56,9 +56,29 @@ appimage-manual:
 	$(LINUXDEPLOY) \
 		--appdir Synca.AppDir \
 		--executable Synca.AppDir/usr/bin/synca \
+		--executable Synca.AppDir/usr/bin/synca-daemon \
+		--library /usr/lib/libharfbuzz.so.0 \
+		--library /usr/lib/libfontconfig.so.1 \
+		--library /usr/lib/libfreetype.so.6 \
+		--library /usr/lib/libexpat.so.1 \
 		--output appimage
 
 	@echo "AppImage built successfully!"
+
+# ── Verification ───────────────────────────────────────────────
+check-appimage:
+	@echo "Verifying AppImage dependencies..."
+	@if [ ! -f releases/linux/Synca-x86_64.AppImage ]; then echo "❌ AppImage not found in releases/linux/"; exit 1; fi
+	@rm -rf squashfs-root
+	@releases/linux/Synca-x86_64.AppImage --appimage-extract > /dev/null
+	@echo "--- basic dependency check ---"
+	@LD_LIBRARY_PATH=squashfs-root/usr/lib ldd squashfs-root/usr/bin/synca | grep "not found" || echo "✅ All immediate dependencies resolved for synca"
+	@echo "--- readelf check for core libraries ---"
+	@readelf -d squashfs-root/usr/bin/synca | grep NEEDED | head -n 10
+	@echo "--- checking if font libraries are bundled ---"
+	@ls squashfs-root/usr/lib/libharfbuzz* squashfs-root/usr/lib/libfontconfig* 2>/dev/null || echo "⚠️ Font libraries (harfbuzz/fontconfig) are NOT bundled (using system libraries)"
+	@rm -rf squashfs-root
+	@echo "Verification complete."
 
 # ── Releases (Linux) ───────────────────────────────────────────
 release-linux: daemon

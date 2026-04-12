@@ -31,3 +31,4 @@ desktop/.npm-cache/
 
 # Production Secrets
 .env
+squashfs-root
