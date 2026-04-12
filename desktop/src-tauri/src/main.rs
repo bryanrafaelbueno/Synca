@@ -4,7 +4,7 @@
 mod cli;
 
 use tauri_plugin_shell::ShellExt;
-use tauri::Manager;
+use tauri::{Manager, menu::{MenuBuilder, MenuItemBuilder}, tray::TrayIconBuilder, WindowEvent};
 
 #[tauri::command]
 async fn login_google_drive(app: tauri::AppHandle) -> Result<String, String> {
@@ -68,6 +68,49 @@ fn main() {
         .manage(DaemonState(Mutex::new(None)))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
+        .setup(|app| {
+            // 1. Create Tray Menu Items
+            let quit_i = MenuItemBuilder::with_id("quit", "Quit Synca").build(app)?;
+            let show_i = MenuItemBuilder::with_id("show", "Show App").build(app)?;
+
+            // 2. Build the Tray Menu
+            let menu = MenuBuilder::new(app)
+                .item(&show_i)
+                .separator()
+                .item(&quit_i)
+                .build()?;
+
+            // 3. Setup Tray Icon
+            let _tray = TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| {
+                    match event.id.as_ref() {
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        _ => {}
+                    }
+                })
+                .build(app)?;
+
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                // Minimize to tray instead of closing
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             login_google_drive, 
             has_token, 

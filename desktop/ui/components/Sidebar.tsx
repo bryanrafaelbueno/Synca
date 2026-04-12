@@ -1,4 +1,6 @@
 import { useSyncStore, selectStats } from '../store/syncStore'
+import { useState, useEffect } from 'react'
+import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart'
 import brandLogo from '../../src-tauri/icons/icon.png'
 
 interface Props {
@@ -20,9 +22,29 @@ function formatTime(iso: string | null): string {
 
 export function Sidebar({ sendCommand }: Props) {
   const stats = useSyncStore(selectStats)
+  const [isAutostart, setIsAutostart] = useState(false)
+
   const syncPct = stats.totalFiles > 0
     ? Math.round((stats.syncedFiles / stats.totalFiles) * 100)
     : 0
+
+  useEffect(() => {
+    isEnabled().then(setIsAutostart).catch(console.error)
+  }, [])
+
+  const toggleAutostart = async () => {
+    try {
+      if (isAutostart) {
+        await disable()
+        setIsAutostart(false)
+      } else {
+        await enable()
+        setIsAutostart(true)
+      }
+    } catch (e) {
+      console.error('Failed to toggle autostart:', e)
+    }
+  }
 
   return (
     <aside className="sidebar">
@@ -85,6 +107,21 @@ export function Sidebar({ sendCommand }: Props) {
           </svg>
           Refresh
         </button>
+      </div>
+
+      <div className="sidebar-section">
+        <div className="section-label">Settings</div>
+        <div className="settings-row">
+          <span className="settings-text">Start on Boot</span>
+          <label className="switch">
+            <input 
+              type="checkbox" 
+              checked={isAutostart} 
+              onChange={toggleAutostart} 
+            />
+            <span className="slider round"></span>
+          </label>
+        </div>
       </div>
 
       <div className="sidebar-footer">
