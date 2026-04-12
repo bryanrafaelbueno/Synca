@@ -275,4 +275,3 @@ MIT © Synca Contributors
 ---
 
 <p align="center">🇧🇷 Made in Brazil 🇧🇷</p>
-```
