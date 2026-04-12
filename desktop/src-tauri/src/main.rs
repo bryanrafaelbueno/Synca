@@ -64,30 +64,36 @@ async fn start_daemon(app: tauri::AppHandle, state: tauri::State<'_, DaemonState
     match app.shell().sidecar("synca-daemon") {
         Ok(sidecar) => {
             eprintln!("Starting synca-daemon sidecar...");
-            // Clear environment to prevent AppImage bundled libs from conflicting with Go runtime
-            let mut sidecar_cmd = sidecar
-                .args(["daemon"])
-                .env_clear();
 
-            // Re-add essential env vars that the daemon might need
-            sidecar_cmd = sidecar_cmd.env("HOME", std::env::var("HOME").unwrap_or_default());
-            sidecar_cmd = sidecar_cmd.env("PATH", std::env::var("PATH").unwrap_or_default());
-            sidecar_cmd = sidecar_cmd.env("XDG_CONFIG_HOME", std::env::var("XDG_CONFIG_HOME").unwrap_or_else(|_| {
-                format!("{}/.config", std::env::var("HOME").unwrap_or_default())
-            }));
-            sidecar_cmd = sidecar_cmd.env("DISPLAY", std::env::var("DISPLAY").unwrap_or_default());
-            sidecar_cmd = sidecar_cmd.env("WAYLAND_DISPLAY", std::env::var("WAYLAND_DISPLAY").unwrap_or_default());
-            sidecar_cmd = sidecar_cmd.env("XDG_RUNTIME_DIR", std::env::var("XDG_RUNTIME_DIR").unwrap_or_default());
-            // Re-add Google auth related vars
-            if let Ok(val) = std::env::var("GOOGLE_APPLICATION_CREDENTIALS") {
-                sidecar_cmd = sidecar_cmd.env("GOOGLE_APPLICATION_CREDENTIALS", val);
-            }
-            if let Ok(val) = std::env::var("XAUTHORITY") {
-                sidecar_cmd = sidecar_cmd.env("XAUTHORITY", val);
-            }
-            if let Ok(val) = std::env::var("DBUS_SESSION_BUS_ADDRESS") {
-                sidecar_cmd = sidecar_cmd.env("DBUS_SESSION_BUS_ADDRESS", val);
-            }
+            // On Linux (especially AppImage), clear env to prevent LD_LIBRARY_PATH conflicts
+            // On Windows, keep the default environment (removing SystemRoot, WINDIR, etc. breaks Go)
+            #[cfg(target_os = "linux")]
+            let sidecar_cmd = {
+                let mut cmd = sidecar
+                    .args(["daemon"])
+                    .env_clear();
+                cmd = cmd.env("HOME", std::env::var("HOME").unwrap_or_default());
+                cmd = cmd.env("PATH", std::env::var("PATH").unwrap_or_default());
+                cmd = cmd.env("XDG_CONFIG_HOME", std::env::var("XDG_CONFIG_HOME").unwrap_or_else(|_| {
+                    format!("{}/.config", std::env::var("HOME").unwrap_or_default())
+                }));
+                cmd = cmd.env("DISPLAY", std::env::var("DISPLAY").unwrap_or_default());
+                cmd = cmd.env("WAYLAND_DISPLAY", std::env::var("WAYLAND_DISPLAY").unwrap_or_default());
+                cmd = cmd.env("XDG_RUNTIME_DIR", std::env::var("XDG_RUNTIME_DIR").unwrap_or_default());
+                if let Ok(val) = std::env::var("GOOGLE_APPLICATION_CREDENTIALS") {
+                    cmd = cmd.env("GOOGLE_APPLICATION_CREDENTIALS", val);
+                }
+                if let Ok(val) = std::env::var("XAUTHORITY") {
+                    cmd = cmd.env("XAUTHORITY", val);
+                }
+                if let Ok(val) = std::env::var("DBUS_SESSION_BUS_ADDRESS") {
+                    cmd = cmd.env("DBUS_SESSION_BUS_ADDRESS", val);
+                }
+                cmd
+            };
+
+            #[cfg(not(target_os = "linux"))]
+            let sidecar_cmd = sidecar.args(["daemon"]);
 
             match sidecar_cmd.spawn() {
                 Ok((mut rx, child)) => {

@@ -21,7 +21,7 @@ daemon:
 daemon-windows:
 	@echo "Building synca daemon (Windows)..."
 	cp .env daemon/internal/auth/.env.embedded || touch daemon/internal/auth/.env.embedded
-	cd daemon && GOOS=windows GOARCH=amd64 go build -o ../bin/synca-daemon.exe ./cmd/synca
+	cd daemon && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o ../bin/synca-daemon-x86_64-pc-windows-gnu.exe ./cmd/synca
 	rm -f daemon/internal/auth/.env.embedded && touch daemon/internal/auth/.env.embedded
 
 daemon-run: daemon

@@ -19,11 +19,20 @@ type Config struct {
 }
 
 func configDir() (string, error) {
-	home, err := os.UserHomeDir()
+	// Use os.UserConfigDir() for cross-platform support:
+	//   Linux:   $HOME/.config
+	//   Windows: %APPDATA%
+	//   macOS:   $HOME/Library/Application Support
+	dir, err := os.UserConfigDir()
 	if err != nil {
-		return "", err
+		// Fallback to $HOME/.config if UserConfigDir fails
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		dir = filepath.Join(home, ".config")
 	}
-	dir := filepath.Join(home, ".config", "synca")
+	dir = filepath.Join(dir, "synca")
 	return dir, os.MkdirAll(dir, 0700)
 }
 

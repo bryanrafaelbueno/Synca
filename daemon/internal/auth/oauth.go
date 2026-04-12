@@ -26,8 +26,12 @@ const (
 )
 
 func configDir() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "synca")
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		home, _ := os.UserHomeDir()
+		dir = filepath.Join(home, ".config")
+	}
+	return filepath.Join(dir, "synca")
 }
 
 // loadEnv attempts to load .env from current dir or parent dirs,
