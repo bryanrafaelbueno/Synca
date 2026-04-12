@@ -23,29 +23,7 @@ export default function App() {
         return
       }
 
-      // For AppImage, wait for background daemon startup
-      const isAppImage = await invoke<boolean>('is_appimage_cmd')
-      if (isAppImage) {
-        // Poll for daemon to be ready (background init)
-        let waited = 0
-        const maxWait = 20000 // 20 seconds max
-        while (waited < maxWait) {
-          const initDone = await invoke<boolean>('is_appimage_init_done')
-          if (initDone) break
-          await new Promise(r => setTimeout(r, 500))
-          waited += 500
-        }
-        if (waited >= maxWait) {
-          setSetupError('Daemon failed to start within timeout')
-          setSetupState('error')
-          return
-        }
-        // Daemon is ready, just mark as ready (WS will connect)
-        setSetupState('ready')
-        return
-      }
-
-      // For non-AppImage (deb), start daemon and wait
+      // Start daemon and wait for health check
       try {
         await invoke('start_daemon')
       } catch (e) {

@@ -11,8 +11,6 @@ fn is_appimage() -> bool {
     std::env::var("APPIMAGE").is_ok() || std::env::var("APPDIR").is_ok()
 }
 
-struct AppInitState(Mutex<bool>);
-
 #[tauri::command]
 async fn login_google_drive(app: tauri::AppHandle) -> Result<String, String> {
     let sidecar = app.shell().sidecar("synca-daemon").map_err(|e| e.to_string())?;
@@ -25,10 +23,32 @@ async fn login_google_drive(app: tauri::AppHandle) -> Result<String, String> {
 }
 
 // Simplified setup: only check for token.json
+// Must use the SAME path that the Go daemon uses (os.UserConfigDir + "synca")
 #[tauri::command]
-fn has_token(app: tauri::AppHandle) -> bool {
-    if let Ok(mut path) = app.path().home_dir() {
-        path.push(".config");
+fn has_token(_app: tauri::AppHandle) -> bool {
+    // Go's os.UserConfigDir() returns:
+    //   Linux:   $HOME/.config
+    //   Windows: %APPDATA%
+    //   macOS:   $HOME/Library/Application Support
+    let config_base = {
+        #[cfg(target_os = "windows")]
+        {
+            std::env::var("APPDATA").ok()
+        }
+        #[cfg(target_os = "macos")]
+        {
+            std::env::var("HOME").map(|h| format!("{}/Library/Application Support", h)).ok()
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        {
+            std::env::var("XDG_CONFIG_HOME")
+                .ok()
+                .or_else(|| std::env::var("HOME").ok().map(|h| format!("{}/.config", h)))
+        }
+    };
+
+    if let Some(base) = config_base {
+        let mut path = std::path::PathBuf::from(base);
         path.push("synca");
         path.push("token.json");
         return path.exists();
@@ -44,11 +64,6 @@ struct DaemonState(Mutex<Option<CommandChild>>);
 #[tauri::command]
 fn is_appimage_cmd() -> bool {
     is_appimage()
-}
-
-#[tauri::command]
-fn is_appimage_init_done(state: tauri::State<'_, AppInitState>) -> bool {
-    *state.0.lock().unwrap()
 }
 
 #[tauri::command]
@@ -72,14 +87,27 @@ async fn start_daemon(app: tauri::AppHandle, state: tauri::State<'_, DaemonState
                 let mut cmd = sidecar
                     .args(["daemon"])
                     .env_clear();
-                cmd = cmd.env("HOME", std::env::var("HOME").unwrap_or_default());
-                cmd = cmd.env("PATH", std::env::var("PATH").unwrap_or_default());
-                cmd = cmd.env("XDG_CONFIG_HOME", std::env::var("XDG_CONFIG_HOME").unwrap_or_else(|_| {
-                    format!("{}/.config", std::env::var("HOME").unwrap_or_default())
-                }));
-                cmd = cmd.env("DISPLAY", std::env::var("DISPLAY").unwrap_or_default());
-                cmd = cmd.env("WAYLAND_DISPLAY", std::env::var("WAYLAND_DISPLAY").unwrap_or_default());
-                cmd = cmd.env("XDG_RUNTIME_DIR", std::env::var("XDG_RUNTIME_DIR").unwrap_or_default());
+                // Only set env vars if they exist in the parent process.
+                // Passing empty strings is worse than not setting the var at all,
+                // because Go's os.UserConfigDir() will fallback to $HOME/.config.
+                if let Ok(val) = std::env::var("HOME") {
+                    cmd = cmd.env("HOME", val);
+                }
+                if let Ok(val) = std::env::var("PATH") {
+                    cmd = cmd.env("PATH", val);
+                }
+                if let Ok(val) = std::env::var("XDG_CONFIG_HOME") {
+                    cmd = cmd.env("XDG_CONFIG_HOME", val);
+                }
+                if let Ok(val) = std::env::var("DISPLAY") {
+                    cmd = cmd.env("DISPLAY", val);
+                }
+                if let Ok(val) = std::env::var("WAYLAND_DISPLAY") {
+                    cmd = cmd.env("WAYLAND_DISPLAY", val);
+                }
+                if let Ok(val) = std::env::var("XDG_RUNTIME_DIR") {
+                    cmd = cmd.env("XDG_RUNTIME_DIR", val);
+                }
                 if let Ok(val) = std::env::var("GOOGLE_APPLICATION_CREDENTIALS") {
                     cmd = cmd.env("GOOGLE_APPLICATION_CREDENTIALS", val);
                 }
@@ -178,31 +206,10 @@ fn main() {
 
     tauri::Builder::default()
         .manage(DaemonState(Mutex::new(None)))
-        .manage(AppInitState(Mutex::new(false)))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .setup(|app| {
-            // Iniciar daemon automaticamente no startup (especialmente importante para AppImage)
-            if is_appimage() {
-                let app_handle = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    let daemon_state = app_handle.state::<DaemonState>();
-                    match start_daemon(app_handle.clone(), daemon_state).await {
-                        Ok(()) => {
-                            eprintln!("Daemon started successfully");
-                            let init_state = app_handle.state::<AppInitState>();
-                            *init_state.0.lock().unwrap() = true;
-                        }
-                        Err(e) => eprintln!("Daemon start failed: {}", e),
-                    }
-                });
-            } else {
-                // Mark as initialized for non-AppImage (daemon will be started by checkSetup)
-                let init_state = app.state::<AppInitState>();
-                *init_state.0.lock().unwrap() = true;
-            }
-
             // 1. Create Tray Menu Items
             let quit_i = MenuItemBuilder::with_id("quit", "Quit Synca").build(app)?;
             let show_i = MenuItemBuilder::with_id("show", "Show App").build(app)?;
@@ -249,8 +256,7 @@ fn main() {
             has_token,
             start_daemon,
             restart_daemon,
-            is_appimage_cmd,
-            is_appimage_init_done
+            is_appimage_cmd
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
