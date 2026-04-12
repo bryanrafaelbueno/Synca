@@ -1,6 +1,7 @@
 .PHONY: daemon daemon-windows daemon-run app-dev app-build \
         release-linux release-windows appimage-manual \
-        dev build setup clean check-deps check-libs
+        dev build setup clean check-deps check-libs \
+        check-webkit collect-webkit-deps check-appimage
 
 # ── Configuration ─────────────────────────────────────────────
 LINUXDEPLOY ?= $(shell which linuxdeploy-x86_64.AppImage 2>/dev/null || which linuxdeploy 2>/dev/null || echo "$$HOME/tools/linuxdeploy/linuxdeploy-x86_64.AppImage")
@@ -10,6 +11,10 @@ HARFBUZZ := $(shell ldconfig -p | grep libharfbuzz.so.0 | head -n1 | awk '{print
 FONTCONFIG := $(shell ldconfig -p | grep libfontconfig.so.1 | head -n1 | awk '{print $$4}')
 FREETYPE := $(shell ldconfig -p | grep libfreetype.so.6 | head -n1 | awk '{print $$4}')
 EXPAT := $(shell ldconfig -p | grep libexpat.so.1 | head -n1 | awk '{print $$4}')
+
+# WebKitGTK detection (para empacotamento portátil)
+WEBKITGTK_SO := $(shell ldconfig -p | grep 'libwebkit2gtk-4.1.so' | head -n1 | awk '{print $$4}')
+WEBKITGTK_LIBEXEC := $(shell for p in /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1 /usr/lib/webkit2gtk-4.1 /usr/lib64/webkit2gtk-4.1 /usr/libexec/webkit2gtk-4.1; do [ -d "$$p" ] && echo "$$p" && break; done)
 
 # ── Backend (Go daemon) ────────────────────────────────────────
 daemon:
@@ -43,6 +48,20 @@ check-libs:
 	@test -f "$(EXPAT)" || (echo "❌ libexpat not found"; exit 1)
 	@echo "✅ All required libs found"
 
+# ── Validate WebKitGTK libs ───────────────────────────────────
+check-webkit:
+	@echo "Checking WebKitGTK dependencies..."
+	@test -n "$(WEBKITGTK_SO)" || (echo "❌ libwebkit2gtk-4.1 not found. Install libwebkit2gtk-4.1-dev"; exit 1)
+	@test -n "$(WEBKITGTK_LIBEXEC)" || (echo "❌ WebKitGTK libexec dir not found"; exit 1)
+	@test -f "$(WEBKITGTK_LIBEXEC)/WebKitNetworkProcess" || (echo "❌ WebKitNetworkProcess not found"; exit 1)
+	@test -f "$(WEBKITGTK_LIBEXEC)/WebKitWebProcess" || (echo "❌ WebKitWebProcess not found"; exit 1)
+	@echo "✅ WebKitGTK components found"
+
+# ── Collect WebKitGTK deps into AppDir ────────────────────────
+collect-webkit-deps: check-webkit
+	@echo "Collecting WebKitGTK dependencies into AppDir..."
+	@bash packaging/collect-webkit-deps.sh "desktop/src-tauri/target/release/bundle/appimage/Synca.AppDir"
+
 # ── AppImage Manual Build ─────────────────────────────────────
 appimage-manual: check-libs
 	@echo "Preparing AppDir..."
@@ -69,6 +88,13 @@ appimage-manual: check-libs
 	cp desktop/src-tauri/target/release/bundle/deb/*/data/usr/share/icons/hicolor/2048x2048/apps/synca.png \
 	   desktop/src-tauri/target/release/bundle/appimage/Synca.AppDir/usr/share/icons/hicolor/2048x2048/apps/
 
+	@echo "Collecting WebKitGTK dependencies..."
+	$(MAKE) collect-webkit-deps
+
+	@echo "Installing custom AppRun..."
+	cp packaging/AppRun desktop/src-tauri/target/release/bundle/appimage/Synca.AppDir/AppRun
+	chmod +x desktop/src-tauri/target/release/bundle/appimage/Synca.AppDir/AppRun
+
 	@echo "Building AppImage..."
 
 	cd desktop/src-tauri/target/release/bundle/appimage && \
@@ -93,8 +119,29 @@ check-appimage:
 	rm -rf squashfs-root
 	releases/linux/Synca-x86_64.AppImage --appimage-extract > /dev/null
 
-	@echo "--- ldd check ---"
+	@echo "--- ldd check (synca) ---"
 	@LD_LIBRARY_PATH=squashfs-root/usr/lib ldd squashfs-root/usr/bin/synca | grep "not found" || echo "✅ OK"
+
+	@echo "--- ldd check (WebKitNetworkProcess) ---"
+	@if [ -f squashfs-root/usr/libexec/webkit2gtk-4.1/WebKitNetworkProcess ]; then \
+		LD_LIBRARY_PATH=squashfs-root/usr/lib ldd squashfs-root/usr/libexec/webkit2gtk-4.1/WebKitNetworkProcess | grep "not found" || echo "✅ OK"; \
+	elif [ -f squashfs-root/usr/bin/webkit2gtk-4.1/WebKitNetworkProcess ]; then \
+		LD_LIBRARY_PATH=squashfs-root/usr/lib ldd squashfs-root/usr/bin/webkit2gtk-4.1/WebKitNetworkProcess | grep "not found" || echo "✅ OK"; \
+	else \
+		echo "⚠️  WebKitNetworkProcess não encontrado no AppImage!"; \
+	fi
+
+	@echo "--- ldd check (WebKitWebProcess) ---"
+	@if [ -f squashfs-root/usr/libexec/webkit2gtk-4.1/WebKitWebProcess ]; then \
+		LD_LIBRARY_PATH=squashfs-root/usr/lib ldd squashfs-root/usr/libexec/webkit2gtk-4.1/WebKitWebProcess | grep "not found" || echo "✅ OK"; \
+	elif [ -f squashfs-root/usr/bin/webkit2gtk-4.1/WebKitWebProcess ]; then \
+		LD_LIBRARY_PATH=squashfs-root/usr/lib ldd squashfs-root/usr/bin/webkit2gtk-4.1/WebKitWebProcess | grep "not found" || echo "✅ OK"; \
+	else \
+		echo "⚠️  WebKitWebProcess não encontrado no AppImage!"; \
+	fi
+
+	@echo "--- strings check (paths hardcoded) ---"
+	@strings squashfs-root/usr/libexec/webkit2gtk-4.1/WebKitNetworkProcess 2>/dev/null | grep -E '/usr/lib/' | grep -v 'usr/lib' | head -5 || echo "✅ No hardcoded Ubuntu paths"
 
 	rm -rf squashfs-root
 

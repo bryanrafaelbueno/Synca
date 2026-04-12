@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -e
+
+# ============================================================
+# AppRun customizado para Synca
+# Resolve o problema de paths hardcoded do WebKitGTK
+# ============================================================
+
+APPDIR="$(dirname "$(readlink -f "$0")")"
+
+# ----------------------------------------------------------
+# 1. Configurar LD_LIBRARY_PATH
+# Inclui libs empacotadas ANTES das do sistema
+# ----------------------------------------------------------
+export LD_LIBRARY_PATH="${APPDIR}/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+# ----------------------------------------------------------
+# 2. Configurar WEBKIT_EXEC_PATH
+# Aponta para os subprocessos WebKit empacotados
+# ----------------------------------------------------------
+export WEBKIT_EXEC_PATH="${APPDIR}/usr/libexec/webkit2gtk-4.1"
+
+# Fallback: se não encontrou em libexec, tenta em usr/bin
+if [ ! -d "$WEBKIT_EXEC_PATH" ]; then
+    export WEBKIT_EXEC_PATH="${APPDIR}/usr/bin/webkit2gtk-4.1"
+fi
+
+# ----------------------------------------------------------
+# 3. Configurar GST_PLUGIN_PATH (GStreamer)
+# Necessário para áudio/vídeo no WebView
+# ----------------------------------------------------------
+export GST_PLUGIN_PATH="${APPDIR}/usr/lib/gstreamer-1.0${GST_PLUGIN_PATH:+:$GST_PLUGIN_PATH}"
+
+# ----------------------------------------------------------
+# 4. Configurar XDG_DATA_DIRS
+# Para schemas do Glib/GIO
+# ----------------------------------------------------------
+export XDG_DATA_DIRS="${APPDIR}/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+
+# ----------------------------------------------------------
+# 5. Configurar GI_TYPELIB_PATH (se necessário)
+# Para GObject Introspection
+# ----------------------------------------------------------
+if [ -d "${APPDIR}/usr/lib/girepository-1.0" ]; then
+    export GI_TYPELIB_PATH="${APPDIR}/usr/lib/girepository-1.0"
+fi
+
+# ----------------------------------------------------------
+# 6. Desabilitar sandbox WebKit (AppImage já é isolado)
+# Evita problemas de permissão em alguns kernels
+# ----------------------------------------------------------
+export WEBKIT_DISABLE_COMPOSITING_MODE=0
+# export WEBKIT_DISABLE_SANDBOX=1  # Descomente apenas se houver crashes
+
+# ----------------------------------------------------------
+# 7. Executar a aplicação
+# ----------------------------------------------------------
+exec "${APPDIR}/usr/bin/synca" "$@"
