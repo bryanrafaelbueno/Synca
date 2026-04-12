@@ -61,6 +61,8 @@ check-webkit:
 collect-webkit-deps: check-webkit
 	@echo "Collecting WebKitGTK dependencies into AppDir..."
 	@bash packaging/collect-webkit-deps.sh "desktop/src-tauri/target/release/bundle/appimage/Synca.AppDir"
+	@echo "Patching hardcoded paths in libwebkit2gtk-4.1.so.0..."
+	@python3 packaging/patch-webkit-lib.py "desktop/src-tauri/target/release/bundle/appimage/Synca.AppDir/usr/lib/libwebkit2gtk-4.1.so.0"
 
 # ── AppImage Manual Build ─────────────────────────────────────
 appimage-manual: check-libs

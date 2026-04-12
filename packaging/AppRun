@@ -4,53 +4,56 @@ set -e
 # ============================================================
 # AppRun customizado para Synca
 # Resolve o problema de paths hardcoded do WebKitGTK
+#
+# Estratégia:
+# 1. A lib libwebkit2gtk-4.1.so.0 é patcheada durante o build
+#    para usar /tmp/.synca-webkit-N em vez do path Ubuntu
+# 2. Este script cria o symlink /tmp/.synca-webkit-N → path empacotado
 # ============================================================
 
 APPDIR="$(dirname "$(readlink -f "$0")")"
 
 # ----------------------------------------------------------
-# 1. Configurar LD_LIBRARY_PATH
-# Inclui libs empacotadas ANTES das do sistema
+# 1. Criar symlink para subprocessos WebKitGTK
+# /tmp/.synca-webkit-N → binários empacotados no AppDir
+# ----------------------------------------------------------
+WEBKIT_SYMLINK="/tmp/.synca-webkit-N"
+WEBKIT_PACKED="${APPDIR}/usr/libexec/webkit2gtk-4.1"
+
+# Fallback: se libexec não existe, tenta usr/bin
+if [ ! -d "$WEBKIT_PACKED" ]; then
+    WEBKIT_PACKED="${APPDIR}/usr/bin/webkit2gtk-4.1"
+fi
+
+rm -f "$WEBKIT_SYMLINK"
+ln -sf "$WEBKIT_PACKED" "$WEBKIT_SYMLINK"
+
+# ----------------------------------------------------------
+# 2. Configurar LD_LIBRARY_PATH
 # ----------------------------------------------------------
 export LD_LIBRARY_PATH="${APPDIR}/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 # ----------------------------------------------------------
-# 2. Configurar WEBKIT_EXEC_PATH
-# Aponta para os subprocessos WebKit empacotados
+# 3. Configurar WEBKIT_EXEC_PATH (fallback)
 # ----------------------------------------------------------
-export WEBKIT_EXEC_PATH="${APPDIR}/usr/libexec/webkit2gtk-4.1"
-
-# Fallback: se não encontrou em libexec, tenta em usr/bin
-if [ ! -d "$WEBKIT_EXEC_PATH" ]; then
-    export WEBKIT_EXEC_PATH="${APPDIR}/usr/bin/webkit2gtk-4.1"
-fi
+export WEBKIT_EXEC_PATH="${WEBKIT_PACKED}"
 
 # ----------------------------------------------------------
-# 3. Configurar GST_PLUGIN_PATH (GStreamer)
-# Necessário para áudio/vídeo no WebView
+# 4. Configurar GST_PLUGIN_PATH (GStreamer)
 # ----------------------------------------------------------
 export GST_PLUGIN_PATH="${APPDIR}/usr/lib/gstreamer-1.0${GST_PLUGIN_PATH:+:$GST_PLUGIN_PATH}"
 
 # ----------------------------------------------------------
-# 4. Configurar XDG_DATA_DIRS
-# Para schemas do Glib/GIO
+# 5. Configurar XDG_DATA_DIRS (GIO schemas)
 # ----------------------------------------------------------
 export XDG_DATA_DIRS="${APPDIR}/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 
 # ----------------------------------------------------------
-# 5. Configurar GI_TYPELIB_PATH (se necessário)
-# Para GObject Introspection
+# 6. GI_TYPELIB_PATH (GObject Introspection)
 # ----------------------------------------------------------
 if [ -d "${APPDIR}/usr/lib/girepository-1.0" ]; then
     export GI_TYPELIB_PATH="${APPDIR}/usr/lib/girepository-1.0"
 fi
-
-# ----------------------------------------------------------
-# 6. Desabilitar sandbox WebKit (AppImage já é isolado)
-# Evita problemas de permissão em alguns kernels
-# ----------------------------------------------------------
-export WEBKIT_DISABLE_COMPOSITING_MODE=0
-# export WEBKIT_DISABLE_SANDBOX=1  # Descomente apenas se houver crashes
 
 # ----------------------------------------------------------
 # 7. Executar a aplicação

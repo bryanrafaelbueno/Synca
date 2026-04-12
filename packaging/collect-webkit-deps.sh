@@ -61,12 +61,53 @@ for bin in WebKitNetworkProcess WebKitWebProcess WebKitDatabaseProcess; do
     fi
 done
 
+# Copiar injected-bundle (se existir)
+if [ -d "$WEBKIT_SRC_DIR/injected-bundle" ]; then
+    mkdir -p "$LIBEXEC_DIR/webkit2gtk-4.1/injected-bundle"
+    cp -rv "$WEBKIT_SRC_DIR/injected-bundle/"* "$LIBEXEC_DIR/webkit2gtk-4.1/injected-bundle/" 2>/dev/null || true
+    echo "    Copiado: injected-bundle/"
+fi
+
 # ============================================================
 # 2. Coletar dependências recursivas do WebKitGTK
 # ============================================================
 echo ">>> Coletando dependências do WebKitGTK..."
 
-# Função para coletar libs recursivamente
+# Copiar a lib principal do WebKitGTK explicitamente
+WEBKIT_LIB_MAIN=$(ldconfig -p 2>/dev/null | grep 'libwebkit2gtk-4.1.so' | head -1 | awk '{print $NF}')
+if [ -n "$WEBKIT_LIB_MAIN" ] && [ -f "$WEBKIT_LIB_MAIN" ]; then
+    cp -v "$WEBKIT_LIB_MAIN" "$LIB_DIR/"
+    echo "    Copiado: $(basename $WEBKIT_LIB_MAIN)"
+    
+    # Copiar também symlinks da lib
+    WEBKIT_LIB_DIR=$(dirname "$WEBKIT_LIB_MAIN")
+    WEBKIT_LIB_BASE=$(basename "$WEBKIT_LIB_MAIN")
+    WEBKIT_LIB_DIRNAME=$(dirname "$WEBKIT_LIB_MAIN")
+    # Procurar por symlinks tipo libwebkit2gtk-4.1.so
+    for link in "$WEBKIT_LIB_DIRNAME"/libwebkit2gtk-4.1.so*; do
+        if [ -L "$link" ]; then
+            cp -v "$link" "$LIB_DIR/" 2>/dev/null || true
+        fi
+    done
+fi
+
+# Copiar JavaScriptCore explicitamente
+JSC_LIB=$(ldconfig -p 2>/dev/null | grep 'libjavascriptcoregtk-4.1.so' | head -1 | awk '{print $NF}')
+if [ -n "$JSC_LIB" ] && [ -f "$JSC_LIB" ]; then
+    cp -v "$JSC_LIB" "$LIB_DIR/"
+    echo "    Copiado: $(basename $JSC_LIB)"
+fi
+
+# Copiar ICU libs explicitamente
+for icu_lib in libicui18n.so libicuuc.so libicudata.so; do
+    icu_path=$(ldconfig -p 2>/dev/null | grep "$icu_lib" | head -1 | awk '{print $NF}')
+    if [ -n "$icu_path" ] && [ -f "$icu_path" ]; then
+        cp -v "$icu_path" "$LIB_DIR/"
+        echo "    Copiado: $(basename $icu_path)"
+    fi
+done
+
+# Função para coletar libs recursivamente (para libs menores e transitivas)
 collect_lib_deps() {
     local lib_path="$1"
     local visited="$2"
