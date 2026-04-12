@@ -1,55 +1,75 @@
 .PHONY: daemon daemon-windows daemon-run app-dev app-build \
         release-linux release-windows appimage-manual \
-        dev build setup clean check-deps
+        dev build setup clean check-deps check-libs
 
 # ── Configuration ─────────────────────────────────────────────
-# Path to linuxdeploy-x86_64.AppImage. Defaults to PATH or local tools dir.
 LINUXDEPLOY ?= $(shell which linuxdeploy-x86_64.AppImage 2>/dev/null || which linuxdeploy 2>/dev/null || echo "$$HOME/tools/linuxdeploy/linuxdeploy-x86_64.AppImage")
+
+# Dynamic library resolution (cross-distro)
+HARFBUZZ := $(shell ldconfig -p | grep libharfbuzz.so.0 | head -n1 | awk '{print $$4}')
+FONTCONFIG := $(shell ldconfig -p | grep libfontconfig.so.1 | head -n1 | awk '{print $$4}')
+FREETYPE := $(shell ldconfig -p | grep libfreetype.so.6 | head -n1 | awk '{print $$4}')
+EXPAT := $(shell ldconfig -p | grep libexpat.so.1 | head -n1 | awk '{print $$4}')
 
 # ── Backend (Go daemon) ────────────────────────────────────────
 daemon:
-	@echo "Building synca daemon with embedded env..."
+	@echo "Building synca daemon..."
 	cp .env daemon/internal/auth/.env.embedded || touch daemon/internal/auth/.env.embedded
 	cd daemon && go build -o ../bin/synca-daemon-x86_64-unknown-linux-gnu ./cmd/synca
 	rm -f daemon/internal/auth/.env.embedded && touch daemon/internal/auth/.env.embedded
 
 daemon-windows:
-	@echo "Building synca daemon for Windows with embedded env..."
+	@echo "Building synca daemon (Windows)..."
 	cp .env daemon/internal/auth/.env.embedded || touch daemon/internal/auth/.env.embedded
-	cd daemon && GOOS=windows GOARCH=amd64 go build -o ../bin/synca-daemon-x86_64-pc-windows-gnu.exe ./cmd/synca
+	cd daemon && GOOS=windows GOARCH=amd64 go build -o ../bin/synca-daemon.exe ./cmd/synca
 	rm -f daemon/internal/auth/.env.embedded && touch daemon/internal/auth/.env.embedded
 
 daemon-run: daemon
 	./bin/synca-daemon-x86_64-unknown-linux-gnu daemon
 
-# ── Frontend (Tauri + React) ───────────────────────────────────
+# ── Frontend ──────────────────────────────────────────────────
 app-dev:
-	@echo "Starting Tauri dev mode..."
 	cd desktop && npm run tauri dev
 
 app-build:
-	@echo "Building Tauri app..."
 	cd desktop && npm run tauri build
 
-# ── AppImage Manual Build ──────────────────────────────────────
-appimage-manual:
-	@echo "Preparing AppDir for manual AppImage build..."
+# ── Validate libs ─────────────────────────────────────────────
+check-libs:
+	@echo "Checking required shared libraries..."
+	@test -f "$(HARFBUZZ)" || (echo "❌ libharfbuzz not found"; exit 1)
+	@test -f "$(FONTCONFIG)" || (echo "❌ libfontconfig not found"; exit 1)
+	@test -f "$(FREETYPE)" || (echo "❌ libfreetype not found"; exit 1)
+	@test -f "$(EXPAT)" || (echo "❌ libexpat not found"; exit 1)
+	@echo "✅ All required libs found"
+
+# ── AppImage Manual Build ─────────────────────────────────────
+appimage-manual: check-libs
+	@echo "Preparing AppDir..."
+
 	mkdir -p desktop/src-tauri/target/release/bundle/appimage/Synca.AppDir/usr/bin
 
-	# Ensure clean bin directory to avoid corrupted files
+	# Clean bin
 	rm -f desktop/src-tauri/target/release/bundle/appimage/Synca.AppDir/usr/bin/*
 
-	# Copy binaries (main app and sidecar)
-	cp desktop/src-tauri/target/release/synca desktop/src-tauri/target/release/bundle/appimage/Synca.AppDir/usr/bin/
-	cp bin/synca-daemon-x86_64-unknown-linux-gnu desktop/src-tauri/target/release/bundle/appimage/Synca.AppDir/usr/bin/synca-daemon
+	# Copy binaries
+	cp desktop/src-tauri/target/release/synca \
+	   desktop/src-tauri/target/release/bundle/appimage/Synca.AppDir/usr/bin/
 
-	# Copy metadata (desktop file and icon) from the built DEB
+	cp bin/synca-daemon-x86_64-unknown-linux-gnu \
+	   desktop/src-tauri/target/release/bundle/appimage/Synca.AppDir/usr/bin/synca-daemon
+
+	# Metadata
 	mkdir -p desktop/src-tauri/target/release/bundle/appimage/Synca.AppDir/usr/share/applications
 	mkdir -p desktop/src-tauri/target/release/bundle/appimage/Synca.AppDir/usr/share/icons/hicolor/2048x2048/apps
-	cp desktop/src-tauri/target/release/bundle/deb/*/data/usr/share/applications/Synca.desktop desktop/src-tauri/target/release/bundle/appimage/Synca.AppDir/usr/share/applications/
-	cp desktop/src-tauri/target/release/bundle/deb/*/data/usr/share/icons/hicolor/2048x2048/apps/synca.png desktop/src-tauri/target/release/bundle/appimage/Synca.AppDir/usr/share/icons/hicolor/2048x2048/apps/
 
-	@echo "Building AppImage manually with linuxdeploy..."
+	cp desktop/src-tauri/target/release/bundle/deb/*/data/usr/share/applications/Synca.desktop \
+	   desktop/src-tauri/target/release/bundle/appimage/Synca.AppDir/usr/share/applications/
+
+	cp desktop/src-tauri/target/release/bundle/deb/*/data/usr/share/icons/hicolor/2048x2048/apps/synca.png \
+	   desktop/src-tauri/target/release/bundle/appimage/Synca.AppDir/usr/share/icons/hicolor/2048x2048/apps/
+
+	@echo "Building AppImage..."
 
 	cd desktop/src-tauri/target/release/bundle/appimage && \
 	export NO_STRIP=1 && \
@@ -57,109 +77,79 @@ appimage-manual:
 		--appdir Synca.AppDir \
 		--executable Synca.AppDir/usr/bin/synca \
 		--executable Synca.AppDir/usr/bin/synca-daemon \
-		--library /usr/lib/libharfbuzz.so.0 \
-		--library /usr/lib/libfontconfig.so.1 \
-		--library /usr/lib/libfreetype.so.6 \
-		--library /usr/lib/libexpat.so.1 \
+		--library $(HARFBUZZ) \
+		--library $(FONTCONFIG) \
+		--library $(FREETYPE) \
+		--library $(EXPAT) \
 		--output appimage
 
-	@echo "AppImage built successfully!"
+	@echo "✅ AppImage built!"
 
-# ── Verification ───────────────────────────────────────────────
+# ── Verify AppImage ───────────────────────────────────────────
 check-appimage:
-	@echo "Verifying AppImage dependencies..."
-	@if [ ! -f releases/linux/Synca-x86_64.AppImage ]; then echo "❌ AppImage not found in releases/linux/"; exit 1; fi
-	@rm -rf squashfs-root
-	@releases/linux/Synca-x86_64.AppImage --appimage-extract > /dev/null
-	@echo "--- basic dependency check ---"
-	@LD_LIBRARY_PATH=squashfs-root/usr/lib ldd squashfs-root/usr/bin/synca | grep "not found" || echo "✅ All immediate dependencies resolved for synca"
-	@echo "--- readelf check for core libraries ---"
-	@readelf -d squashfs-root/usr/bin/synca | grep NEEDED | head -n 10
-	@echo "--- checking if font libraries are bundled ---"
-	@ls squashfs-root/usr/lib/libharfbuzz* squashfs-root/usr/lib/libfontconfig* 2>/dev/null || echo "⚠️ Font libraries (harfbuzz/fontconfig) are NOT bundled (using system libraries)"
-	@rm -rf squashfs-root
-	@echo "Verification complete."
+	@echo "Checking AppImage..."
+	@test -f releases/linux/Synca-x86_64.AppImage || (echo "❌ AppImage not found"; exit 1)
 
-# ── Releases (Linux) ───────────────────────────────────────────
+	rm -rf squashfs-root
+	releases/linux/Synca-x86_64.AppImage --appimage-extract > /dev/null
+
+	@echo "--- ldd check ---"
+	@LD_LIBRARY_PATH=squashfs-root/usr/lib ldd squashfs-root/usr/bin/synca | grep "not found" || echo "✅ OK"
+
+	rm -rf squashfs-root
+
+# ── Releases ──────────────────────────────────────────────────
 release-linux: daemon
-	@echo "Building Linux release artifacts..."
+	@echo "Building Linux release..."
+
 	rm -rf desktop/src-tauri/target/release/bundle/deb/*
 	rm -rf desktop/src-tauri/target/release/bundle/appimage/*
 
-	# Build only DEB with Tauri (stable)
 	cd desktop && \
 	CARGO_HOME=$$(pwd)/.cargo-home \
 	CARGO_TARGET_DIR=$$(pwd)/src-tauri/target \
 	npm run tauri build -- --bundles deb
 
-	# Build AppImage manually (reliable)
 	$(MAKE) appimage-manual
 
-	@echo "Exporting Linux releases to root..."
 	mkdir -p releases/linux
 	rm -rf releases/linux/*
 
-	# Copy DEB
 	cp -r desktop/src-tauri/target/release/bundle/deb/* releases/linux/ 2>/dev/null || true
-
-	# Copy AppImage (manual build)
 	cp -r desktop/src-tauri/target/release/bundle/appimage/*.AppImage releases/linux/ 2>/dev/null || true
 
-	@echo "Release Linux artifacts exported to ./releases/linux/"
+	@echo "✅ Linux release ready"
 
-# ── Releases (Windows) ─────────────────────────────────────────
 release-windows: daemon-windows
-	@echo "Building Windows release artifacts..."
-	rm -rf desktop/src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/*
 	cd desktop && \
 	CARGO_HOME=$$(pwd)/.cargo-home \
 	CARGO_TARGET_DIR=$$(pwd)/src-tauri/target \
 	npm run tauri build -- --target x86_64-pc-windows-gnu
 
-	@echo "Exporting Windows releases to root..."
 	mkdir -p releases/windows
-	rm -rf releases/windows/*
+	cp desktop/src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/*.exe releases/windows/ || true
 
-	cp -r desktop/src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/*.exe releases/windows/ || true
-
-	@echo "Release Windows artifacts exported to ./releases/windows/"
-
-# ── Dev ────────────────────────────────────────────────────────
+# ── Dev ───────────────────────────────────────────────────────
 dev: daemon
-	@echo "Cleaning zombie daemons..."
 	-pkill -f synca-daemon || true
-
-	@echo "Starting Tauri app..."
 	cd desktop && npm run tauri dev
 
-# ── Full build ─────────────────────────────────────────────────
+# ── Build ─────────────────────────────────────────────────────
 build: daemon app-build
-	@echo "Build complete."
 
-# ── Dependency Check ───────────────────────────────────────────
-check-deps:
-	@echo "Checking build dependencies..."
-	@go version >/dev/null 2>&1 || (echo "❌ Go is not installed"; exit 1)
-	@rustc --version >/dev/null 2>&1 || (echo "❌ Rust is not installed"; exit 1)
-	@npm --version >/dev/null 2>&1 || (echo "❌ NPM is not installed"; exit 1)
-	@echo "✅ Core compilers (Go, Rust, Node.js) are present."
-	@if [ "$$(uname)" = "Linux" ]; then \
-		(pkg-config --exists webkit2gtk-4.1 || pkg-config --exists webkit2gtk-4.0) || (echo "⚠️ webkit2gtk development headers not found (required for Tauri on Linux)"); \
-		which makensis >/dev/null 2>&1 || echo "⚠️ makensis not found (required for building Windows installers on Linux)"; \
-		[ -f "$(LINUXDEPLOY)" ] || which linuxdeploy-x86_64.AppImage >/dev/null 2>&1 || echo "⚠️ linuxdeploy not found (required for AppImage)"; \
-	fi
-	@echo "Dependency check complete."
-
-# ── Setup ──────────────────────────────────────────────────────
+# ── Setup ─────────────────────────────────────────────────────
 setup: check-deps
-	@echo "Installing frontend dependencies..."
 	cd desktop && npm install
-	@echo "Downloading Go modules..."
 	cd daemon && go mod tidy
-	@echo "✓ Setup complete."
-	@echo "To connect to Google Drive, build and run the app, then click 'Log in' in the UI."
 
-# ── Clean ──────────────────────────────────────────────────────
+# ── Clean ─────────────────────────────────────────────────────
 clean:
 	rm -rf bin/ releases/
 	cd desktop && rm -rf node_modules dist src-tauri/target
+
+# ── Dependency Check ───────────────────────────────────────────
+check-deps:
+	@go version >/dev/null 2>&1 || (echo "❌ Go missing"; exit 1)
+	@rustc --version >/dev/null 2>&1 || (echo "❌ Rust missing"; exit 1)
+	@npm --version >/dev/null 2>&1 || (echo "❌ npm missing"; exit 1)
+	@echo "✅ Core dependencies OK"
