@@ -1,6 +1,7 @@
 import { useSyncStore, selectStats } from '../store/syncStore'
 import { useState, useEffect } from 'react'
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart'
+import { invoke } from '@tauri-apps/api/core'
 import brandLogo from '../../src-tauri/icons/icon.png'
 
 interface Props {
@@ -23,6 +24,7 @@ function formatTime(iso: string | null): string {
 export function Sidebar({ sendCommand }: Props) {
   const stats = useSyncStore(selectStats)
   const [isAutostart, setIsAutostart] = useState(false)
+  const [isAppImage, setIsAppImage] = useState(false)
 
   const syncPct = stats.totalFiles > 0
     ? Math.round((stats.syncedFiles / stats.totalFiles) * 100)
@@ -30,6 +32,7 @@ export function Sidebar({ sendCommand }: Props) {
 
   useEffect(() => {
     isEnabled().then(setIsAutostart).catch(console.error)
+    invoke<boolean>('is_appimage_cmd').then(setIsAppImage).catch(console.error)
   }, [])
 
   const toggleAutostart = async () => {
@@ -109,20 +112,22 @@ export function Sidebar({ sendCommand }: Props) {
         </button>
       </div>
 
-      <div className="sidebar-section">
-        <div className="section-label">Settings</div>
-        <div className="settings-row">
-          <span className="settings-text">Start on Boot</span>
-          <label className="switch">
-            <input 
-              type="checkbox" 
-              checked={isAutostart} 
-              onChange={toggleAutostart} 
-            />
-            <span className="slider round"></span>
-          </label>
+      {!isAppImage && (
+        <div className="sidebar-section">
+          <div className="section-label">Settings</div>
+          <div className="settings-row">
+            <span className="settings-text">Start on Boot</span>
+            <label className="switch">
+              <input
+                type="checkbox"
+                checked={isAutostart}
+                onChange={toggleAutostart}
+              />
+              <span className="slider round"></span>
+            </label>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="sidebar-footer">
         <span className="footer-version">v0.2.0-mvp</span>

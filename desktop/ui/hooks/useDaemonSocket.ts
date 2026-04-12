@@ -21,6 +21,7 @@ export function useDaemonSocket() {
 
       socket.onopen = () => {
         attempts.current = 0
+        console.log('[useDaemonSocket] WebSocket connected')
         setConnected(true)
         setError(null)
         // Request immediate status
@@ -34,9 +35,12 @@ export function useDaemonSocket() {
             setLastWsError(data.error)
             return
           }
-          if (!Array.isArray(data.files)) {
+          // Normalize files: treat null/undefined as empty array
+          const files = data.files
+          if (files !== null && files !== undefined && !Array.isArray(files)) {
             return
           }
+          data.files = files ?? []
           setSnapshot(data as unknown as StatusSnapshot)
         } catch (e) {
           console.error('Failed to parse daemon message:', e)
@@ -44,6 +48,7 @@ export function useDaemonSocket() {
       }
 
       socket.onclose = () => {
+        console.log('[useDaemonSocket] WebSocket closed, attempts:', attempts.current)
         setConnected(false)
         if (attempts.current < MAX_RECONNECT_ATTEMPTS) {
           attempts.current++
@@ -53,7 +58,8 @@ export function useDaemonSocket() {
         }
       }
 
-      socket.onerror = () => {
+      socket.onerror = (e) => {
+        console.error('[useDaemonSocket] WebSocket error:', e)
         setConnected(false)
       }
     } catch (e) {

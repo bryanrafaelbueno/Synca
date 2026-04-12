@@ -15,7 +15,7 @@ EXPAT := $(shell ldconfig -p | grep libexpat.so.1 | head -n1 | awk '{print $$4}'
 daemon:
 	@echo "Building synca daemon..."
 	cp .env daemon/internal/auth/.env.embedded || touch daemon/internal/auth/.env.embedded
-	cd daemon && go build -o ../bin/synca-daemon-x86_64-unknown-linux-gnu ./cmd/synca
+	cd daemon && CGO_ENABLED=0 go build -o ../bin/synca-daemon-x86_64-unknown-linux-gnu ./cmd/synca
 	rm -f daemon/internal/auth/.env.embedded && touch daemon/internal/auth/.env.embedded
 
 daemon-windows:

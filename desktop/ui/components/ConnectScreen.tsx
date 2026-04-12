@@ -4,7 +4,7 @@ import { useState } from 'react';
 import type { SetupState } from '../App';
 
 interface ConnectScreenProps {
-  setupState: SetupState | 'socket_error'
+  setupState: SetupState | 'socket_error' | 'connecting'
   error: string
   checkSetup: () => void
 }
@@ -36,17 +36,28 @@ export function ConnectScreen({ setupState, error, checkSetup }: ConnectScreenPr
           </svg>
         </div>
         <h2 className="connect-title">
-           {setupState === 'checking' ? "Starting Synca..." : 
-            setupState === 'needs_creds' ? "Initial Setup" : 
+           {setupState === 'checking' ? "Starting Synca..." :
+            setupState === 'connecting' ? "Connecting to daemon..." :
+            setupState === 'needs_creds' ? "Initial Setup" :
             setupState === 'needs_token' ? "Authentication Required" : "Connection Pending"}
         </h2>
-        
+
         <p className="connect-msg">
            {setupState === 'checking' ? "Looking for saved settings..." :
+            setupState === 'connecting' ? "Waiting for daemon to start..." :
             setupState === 'needs_token' ? "Log in to Google Drive to authorize Synca." : error}
         </p>
-        
+
         <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+
+          {setupState === 'connecting' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center' }}>
+              <svg width="20" height="20" viewBox="0 0 20 20" style={{ animation: 'spin 1s linear infinite' }}>
+                <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="40 10" opacity="0.5"/>
+              </svg>
+              <span>Starting daemon, please wait...</span>
+            </div>
+          )}
 
           {setupState === 'needs_token' && (
             <button className="btn-connect" onClick={handleLogin} disabled={isLoggingIn}>

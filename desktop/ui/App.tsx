@@ -13,6 +13,7 @@ export type SetupState = 'checking' | 'needs_creds' | 'needs_token' | 'ready' | 
 export default function App() {
   const [setupState, setSetupState] = useState<SetupState>('checking')
   const [setupError, setSetupError] = useState('')
+  const { connected } = useSyncStore()
 
   const checkSetup = async () => {
     try {
@@ -21,13 +22,39 @@ export default function App() {
         setSetupState('needs_token')
         return
       }
-      
+
+      // For AppImage, wait for background daemon startup
+      const isAppImage = await invoke<boolean>('is_appimage_cmd')
+      if (isAppImage) {
+        // Poll for daemon to be ready (background init)
+        let waited = 0
+        const maxWait = 20000 // 20 seconds max
+        while (waited < maxWait) {
+          const initDone = await invoke<boolean>('is_appimage_init_done')
+          if (initDone) break
+          await new Promise(r => setTimeout(r, 500))
+          waited += 500
+        }
+        if (waited >= maxWait) {
+          setSetupError('Daemon failed to start within timeout')
+          setSetupState('error')
+          return
+        }
+        // Daemon is ready, just mark as ready (WS will connect)
+        setSetupState('ready')
+        return
+      }
+
+      // For non-AppImage (deb), start daemon and wait
       try {
         await invoke('start_daemon')
       } catch (e) {
-        console.warn("Daemon start result:", e)
+        console.error("Daemon start failed:", e)
+        setSetupError(String(e))
+        setSetupState('error')
+        return
       }
-      
+
       setSetupState('ready')
     } catch (e) {
       console.error(e)
@@ -40,10 +67,20 @@ export default function App() {
     checkSetup()
   }, [])
 
+  // Wait for WebSocket connection after setup is ready
+  useEffect(() => {
+    if (setupState === 'ready' && connected) {
+      // All good, let the app render
+    } else if (setupState === 'ready' && !connected) {
+      // Still connecting, show a loading state
+    }
+  }, [setupState, connected])
+
   if (setupState !== 'ready') {
     return <ConnectScreen setupState={setupState} checkSetup={checkSetup} error={setupError} />
   }
 
+  // Always render MainApp once setup is ready; it handles the connecting state internally
   return <MainApp />
 }
 
@@ -51,6 +88,7 @@ function MainApp() {
   const { sendCommand } = useDaemonSocket()
   const { connected, error } = useSyncStore()
 
+  // Show error screen if connection failed
   if (error && !connected) {
     return <ConnectScreen setupState="socket_error" checkSetup={() => window.location.reload()} error={error} />
   }

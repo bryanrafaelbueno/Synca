@@ -21,6 +21,8 @@ tauri = { version = "2.10.1", features = ["tray-icon"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
+tokio = { version = "1", features = ["time", "macros"] }
+reqwest = { version = "0.12", features = ["blocking"] }
 
 [features]
 # this feature is used for production builds or when `devPath` points to the filesystem and the built-in dev server is disabled.
