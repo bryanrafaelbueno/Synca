@@ -2,12 +2,14 @@ package sync
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -53,6 +55,7 @@ type FileEntry struct {
 	LastSync     time.Time  `json:"last_sync"`
 	LocalMD5     string     `json:"local_md5"`
 	RemoteMD5    string     `json:"remote_md5"`
+	Size         int64      `json:"size"`
 	ErrorMsg     string     `json:"error,omitempty"`
 }
 
@@ -87,6 +90,12 @@ type Engine struct {
 
 	// work queue
 	queue chan workItem
+
+	// Throttled broadcast: coalesce rapid state changes
+	broadcastDirty int32
+
+	// Persistent state file path
+	stateFile string
 }
 
 type workItem struct {
@@ -104,6 +113,9 @@ func NewEngine(cfg *config.Config) (*Engine, error) {
 		return nil, err
 	}
 
+	// Derive state file path from config dir (same dir as config.json)
+	stateFile := filepath.Join(filepath.Dir(cfg.TokenFile), "sync_state.json")
+
 	e := &Engine{
 		cfg:         cfg,
 		watcher:     w,
@@ -112,12 +124,19 @@ func NewEngine(cfg *config.Config) (*Engine, error) {
 		folderCache: make(map[string]string),
 		Updates:     make(chan StatusSnapshot, 8),
 		queue:       make(chan workItem, 512),
+		stateFile:   stateFile,
 	}
 
 	e.resolver = conflicts.NewDetector(
 		cfg.ConflictDir,
 		conflicts.StrategyKeepBoth,
 	)
+
+	// Load persisted sync state from previous session
+	e.loadState()
+
+	// Start throttled broadcast loop (coalesces rapid updates)
+	go e.broadcastThrottle()
 
 	return e, nil
 }
@@ -164,6 +183,7 @@ func (e *Engine) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			close(e.queue)
 			wg.Wait()
+			e.saveState()
 			return nil
 
 		case event, ok := <-e.watcher.Events:
@@ -177,6 +197,7 @@ func (e *Engine) Run(ctx context.Context) error {
 
 		case <-ticker.C:
 			go e.pollRemote(ctx)
+			go e.saveState()
 		}
 	}
 }
@@ -215,22 +236,30 @@ func (e *Engine) handleEvent(ctx context.Context, event watcher.FileEvent) {
 }
 
 func (e *Engine) uploadFile(ctx context.Context, localPath string) {
-	e.setStatus(localPath, StatusSyncing, "")
-
+	// Compute local MD5 BEFORE setting status (avoid creating bare entry that defeats dedup)
 	localMD5, err := conflicts.MD5File(localPath)
 	if err != nil {
 		e.setStatus(localPath, StatusError, err.Error())
 		return
 	}
 
+	// Get file size for caching
+	var fileSize int64
+	if fi, err := os.Stat(localPath); err == nil {
+		fileSize = fi.Size()
+	}
+
 	e.mu.RLock()
 	entry := e.files[localPath]
 	e.mu.RUnlock()
 
-	// Skip if unchanged
+	// Skip if local content unchanged from last successful sync
 	if entry != nil && entry.LocalMD5 == localMD5 && entry.Status == StatusSynced {
 		return
 	}
+
+	// NOW mark as syncing (after dedup check passed)
+	e.setStatus(localPath, StatusSyncing, "")
 
 	remoteName := filepath.Base(localPath)
 	parentID, err := e.resolveRemoteParentID(ctx, localPath)
@@ -259,8 +288,8 @@ func (e *Engine) uploadFile(ctx context.Context, localPath string) {
 		e.mu.RUnlock()
 	}
 
-	// If file exists on Drive but not in memory (restart), and is identical (MD5):
-	if remoteFile != nil && entry == nil && remoteFile.MD5 == localMD5 {
+	// If remote file exists and MD5 matches local, skip upload (covers both restart and unchanged cases)
+	if remoteFile != nil && remoteFile.MD5 == localMD5 {
 		e.mu.Lock()
 		e.files[localPath] = &FileEntry{
 			LocalPath:  localPath,
@@ -270,10 +299,11 @@ func (e *Engine) uploadFile(ctx context.Context, localPath string) {
 			LastSync:   time.Now(),
 			LocalMD5:   localMD5,
 			RemoteMD5:  remoteFile.MD5,
+			Size:       fileSize,
 		}
 		e.mu.Unlock()
-		e.setStatus(localPath, StatusSynced, "")
-		return // Passive sync without duplicate upload
+		e.broadcast()
+		return
 	}
 
 	// Check for conflict
@@ -324,6 +354,7 @@ func (e *Engine) uploadFile(ctx context.Context, localPath string) {
 		LastSync:   time.Now(),
 		LocalMD5:   localMD5,
 		RemoteMD5:  result.MD5,
+		Size:       fileSize,
 	}
 	e.mu.Unlock()
 
@@ -367,12 +398,16 @@ func (e *Engine) fullSync(ctx context.Context) {
 	}
 	e.mu.Unlock()
 
-	// Upload any local files not yet in Drive
+	// Upload any local files not yet in Drive (throttled to avoid flooding the queue)
 	e.pathsMu.RLock()
 	roots := slices.Clone(e.cfg.WatchPaths)
 	e.pathsMu.RUnlock()
+	var paths []string
 	for _, watchPath := range roots {
 		_ = filepath.WalkDir(watchPath, func(path string, d os.DirEntry, err error) error {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			if err != nil {
 				return nil
 			}
@@ -387,12 +422,26 @@ func (e *Engine) fullSync(ctx context.Context) {
 			if isTempFile(path) {
 				return nil
 			}
-			e.queue <- workItem{event: watcher.FileEvent{Path: path, Kind: watcher.EventWrite}}
+			paths = append(paths, path)
+			e.markQueuedIfNotExists(path)
 			return nil
 		})
 	}
 
-	log.Info().Int("remote_files", len(remoteFiles)).Msg("Full sync complete")
+	count := 0
+	for _, path := range paths {
+		select {
+		case e.queue <- workItem{event: watcher.FileEvent{Path: path, Kind: watcher.EventWrite}}:
+			count++
+			if count%50 == 0 {
+				time.Sleep(100 * time.Millisecond) // let workers drain
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
+
+	log.Info().Int("remote_files", len(remoteFiles)).Int("local_enqueued", count).Msg("Full sync complete")
 	e.broadcast()
 }
 
@@ -421,11 +470,33 @@ func (e *Engine) setStatus(localPath string, status FileStatus, errMsg string) {
 	e.broadcast()
 }
 
+func (e *Engine) markQueuedIfNotExists(localPath string) {
+	e.mu.Lock()
+	entry := e.files[localPath]
+	if entry == nil {
+		entry = &FileEntry{LocalPath: localPath, Status: StatusQueued}
+		e.files[localPath] = entry
+	}
+	e.mu.Unlock()
+	e.broadcast()
+}
+
 func (e *Engine) broadcast() {
-	snap := e.Snapshot()
-	select {
-	case e.Updates <- snap:
-	default: // drop if nobody is listening
+	atomic.StoreInt32(&e.broadcastDirty, 1)
+}
+
+// broadcastThrottle coalesces rapid state changes into periodic snapshots.
+func (e *Engine) broadcastThrottle() {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	for range ticker.C {
+		if atomic.CompareAndSwapInt32(&e.broadcastDirty, 1, 0) {
+			snap := e.Snapshot()
+			select {
+			case e.Updates <- snap:
+			default:
+			}
+		}
 	}
 }
 
@@ -443,9 +514,7 @@ func (e *Engine) Snapshot() StatusSnapshot {
 		if entry.Status == StatusSynced {
 			snap.SyncedFiles++
 		}
-		if fi, err := os.Stat(entry.LocalPath); err == nil {
-			snap.TotalBytes += fi.Size()
-		}
+		snap.TotalBytes += entry.Size // use cached size instead of os.Stat
 	}
 	return snap
 }
@@ -596,7 +665,11 @@ func (e *Engine) AddWatchRoot(ctx context.Context, raw string) error {
 }
 
 func (e *Engine) indexNewWatchRoot(ctx context.Context, watchPath string) {
+	var paths []string
 	_ = filepath.WalkDir(watchPath, func(path string, d os.DirEntry, err error) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if err != nil {
 			return nil
 		}
@@ -611,11 +684,59 @@ func (e *Engine) indexNewWatchRoot(ctx context.Context, watchPath string) {
 		if isTempFile(path) {
 			return nil
 		}
-		select {
-		case e.queue <- workItem{event: watcher.FileEvent{Path: path, Kind: watcher.EventWrite}}:
-		default:
-		}
+		paths = append(paths, path)
+		e.markQueuedIfNotExists(path)
 		return nil
 	})
+
+	count := 0
+	for _, path := range paths {
+		select {
+		case e.queue <- workItem{event: watcher.FileEvent{Path: path, Kind: watcher.EventWrite}}:
+			count++
+			if count%50 == 0 {
+				time.Sleep(100 * time.Millisecond) // let workers drain
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
+	log.Info().Int("files_enqueued", count).Str("path", watchPath).Msg("Folder indexing complete")
 	e.broadcast()
+}
+
+// loadState restores the files map from disk (previous session).
+func (e *Engine) loadState() {
+	data, err := os.ReadFile(e.stateFile)
+	if err != nil {
+		return // no previous state, start fresh
+	}
+	var entries map[string]*FileEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		log.Warn().Err(err).Msg("Failed to parse sync state file, starting fresh")
+		return
+	}
+	e.mu.Lock()
+	for path, entry := range entries {
+		// Only restore entries that were successfully synced
+		if entry.Status == StatusSynced && entry.RemoteID != "" {
+			e.files[path] = entry
+		}
+	}
+	e.mu.Unlock()
+	log.Info().Int("restored_files", len(e.files)).Msg("Loaded sync state from disk")
+}
+
+// saveState persists the files map to disk for resume on restart.
+func (e *Engine) saveState() {
+	e.mu.RLock()
+	data, err := json.Marshal(e.files)
+	e.mu.RUnlock()
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to marshal sync state")
+		return
+	}
+	if err := os.WriteFile(e.stateFile, data, 0600); err != nil {
+		log.Warn().Err(err).Msg("Failed to save sync state")
+	}
 }

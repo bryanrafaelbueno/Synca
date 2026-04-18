@@ -10,6 +10,7 @@ export interface FileEntry {
   last_sync: string
   local_md5: string
   remote_md5: string
+  size: number
   error?: string
 }
 
