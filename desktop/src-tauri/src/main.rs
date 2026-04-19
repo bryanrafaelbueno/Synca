@@ -60,7 +60,10 @@ fn has_token(_app: tauri::AppHandle) -> bool {
 use std::sync::Mutex;
 use tauri_plugin_shell::process::CommandChild;
 
-struct DaemonState(Mutex<Option<CommandChild>>);
+struct DaemonState {
+    child: Mutex<Option<CommandChild>>,
+    spawn_lock: tokio::sync::Mutex<()>,
+}
 
 #[tauri::command]
 fn is_appimage_cmd() -> bool {
@@ -87,13 +90,23 @@ async fn pick_folder_dialog(app: tauri::AppHandle) -> Result<Option<String>, Str
 
 #[tauri::command]
 async fn start_daemon(app: tauri::AppHandle, state: tauri::State<'_, DaemonState>) -> Result<(), String> {
+    let _lock = state.spawn_lock.lock().await;
+
     // Kill existing daemon if running
     {
-        let mut child_guard = state.0.lock().unwrap();
+        let mut child_guard = state.child.lock().unwrap();
         if let Some(child) = child_guard.take() {
             let _ = child.kill();
         }
     } // Lock released here
+
+    // Ping existing instance to quit (handles orphaned processes from previous runs)
+    eprintln!("Checking for existing orphaned daemon on port 7373...");
+    let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(1)).build().unwrap();
+    if let Ok(_) = client.post("http://127.0.0.1:7373/quit").send().await {
+        eprintln!("Sent quit signal to existing daemon. Waiting for port release...");
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
 
     match app.shell().sidecar("synca-daemon") {
         Ok(sidecar) => {
@@ -161,7 +174,7 @@ async fn start_daemon(app: tauri::AppHandle, state: tauri::State<'_, DaemonState
                                     eprintln!("[daemon] terminated with code {:?}, signal {:?}", payload.code, payload.signal);
                                     // Clear the state since daemon died
                                     let state = app_clone.state::<DaemonState>();
-                                    let mut guard = state.0.lock().unwrap();
+                                    let mut guard = state.child.lock().unwrap();
                                     guard.take();
                                 }
                                 _ => {}
@@ -171,7 +184,7 @@ async fn start_daemon(app: tauri::AppHandle, state: tauri::State<'_, DaemonState
 
                     // Store child in state
                     {
-                        let mut child_guard = state.0.lock().unwrap();
+                        let mut child_guard = state.child.lock().unwrap();
                         *child_guard = Some(child);
                     } // Lock released here
 
@@ -193,7 +206,7 @@ async fn start_daemon(app: tauri::AppHandle, state: tauri::State<'_, DaemonState
                     }
 
                     // After all retries, check if daemon process is still alive
-                    let guard = state.0.lock().unwrap();
+                    let guard = state.child.lock().unwrap();
                     if guard.is_none() {
                         eprintln!("Daemon process died during startup");
                         return Err("Daemon process died during startup".to_string());
@@ -224,7 +237,10 @@ fn main() {
     cli::forward_to_daemon_if_cli();
 
     tauri::Builder::default()
-        .manage(DaemonState(Mutex::new(None)))
+        .manage(DaemonState {
+            child: Mutex::new(None),
+            spawn_lock: tokio::sync::Mutex::new(()),
+        })
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))

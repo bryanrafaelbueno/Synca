@@ -54,9 +54,35 @@ func (s *WebSocketServer) Start(addr string) error {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	})
+	mux.HandleFunc("/quit", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" {
+			log.Info().Msg("Received quit signal via HTTP, shutting down gracefully...")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"ok":true}`))
+			go func() {
+				time.Sleep(100 * time.Millisecond)
+				os.Exit(0)
+			}()
+		}
+	})
 
 	log.Info().Str("addr", addr).Msg("WebSocket server listening")
-	return http.ListenAndServe(addr, mux)
+	
+	var listener net.Listener
+	var err error
+	for i := 0; i < 10; i++ {
+		listener, err = net.Listen("tcp", addr)
+		if err == nil {
+			break
+		}
+		log.Warn().Err(err).Msgf("Failed to bind to %s, retrying in 500ms... (%d/10)", addr, i+1)
+		time.Sleep(500 * time.Millisecond)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to bind port after retries: %w", err)
+	}
+
+	return http.Serve(listener, mux)
 }
 
 func (s *WebSocketServer) handleWS(w http.ResponseWriter, r *http.Request) {
