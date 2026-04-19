@@ -56,6 +56,7 @@ type FileEntry struct {
 	LocalMD5     string     `json:"local_md5"`
 	RemoteMD5    string     `json:"remote_md5"`
 	Size         int64      `json:"size"`
+	IsDir        bool       `json:"is_dir"`
 	ErrorMsg     string     `json:"error,omitempty"`
 }
 
@@ -217,8 +218,16 @@ func (e *Engine) handleEvent(ctx context.Context, event watcher.FileEvent) {
 	// Keep folder structure in Drive when local directories are created.
 	if fi, err := os.Stat(path); err == nil && fi.IsDir() {
 		if event.Kind == watcher.EventCreate {
+			e.setStatusDir(path, StatusSyncing, "")
 			if _, err := e.ensureRemoteFolderTree(ctx, path); err != nil {
 				log.Error().Err(err).Str("path", path).Msg("Failed to sync folder")
+				errMsg := err.Error()
+				if strings.Contains(errMsg, "403") || strings.Contains(errMsg, "400") {
+					errMsg = "Path too deep: Drive limit is 100 nested folders"
+				}
+				e.setStatusDir(path, StatusError, errMsg)
+			} else {
+				e.setStatusDir(path, StatusSynced, "")
 			}
 		}
 		return
@@ -413,8 +422,16 @@ func (e *Engine) fullSync(ctx context.Context) {
 			}
 			if d.IsDir() {
 				if path != watchPath {
+					e.setStatusDir(path, StatusSyncing, "")
 					if _, err := e.ensureRemoteFolderTree(ctx, path); err != nil {
 						log.Error().Err(err).Str("path", path).Msg("Failed to sync folder during full sync")
+						errMsg := err.Error()
+						if strings.Contains(errMsg, "403") || strings.Contains(errMsg, "400") {
+							errMsg = "Path too deep: Drive limit is 100 nested folders"
+						}
+						e.setStatusDir(path, StatusError, errMsg)
+					} else {
+						e.setStatusDir(path, StatusSynced, "")
 					}
 				}
 				return nil
@@ -458,23 +475,40 @@ func (e *Engine) pollRemote(ctx context.Context) {
 }
 
 func (e *Engine) setStatus(localPath string, status FileStatus, errMsg string) {
+	e.setStatusInternal(localPath, status, errMsg, false)
+}
+
+func (e *Engine) setStatusDir(localPath string, status FileStatus, errMsg string) {
+	e.setStatusInternal(localPath, status, errMsg, true)
+}
+
+func (e *Engine) setStatusInternal(localPath string, status FileStatus, errMsg string, isDir bool) {
 	e.mu.Lock()
 	entry := e.files[localPath]
 	if entry == nil {
-		entry = &FileEntry{LocalPath: localPath}
+		entry = &FileEntry{LocalPath: localPath, IsDir: isDir}
 		e.files[localPath] = entry
 	}
 	entry.Status = status
 	entry.ErrorMsg = errMsg
+	entry.IsDir = isDir
 	e.mu.Unlock()
 	e.broadcast()
 }
 
 func (e *Engine) markQueuedIfNotExists(localPath string) {
+	e.markQueuedIfNotExistsInternal(localPath, false)
+}
+
+func (e *Engine) markQueuedDirIfNotExists(localPath string) {
+	e.markQueuedIfNotExistsInternal(localPath, true)
+}
+
+func (e *Engine) markQueuedIfNotExistsInternal(localPath string, isDir bool) {
 	e.mu.Lock()
 	entry := e.files[localPath]
 	if entry == nil {
-		entry = &FileEntry{LocalPath: localPath, Status: StatusQueued}
+		entry = &FileEntry{LocalPath: localPath, Status: StatusQueued, IsDir: isDir}
 		e.files[localPath] = entry
 	}
 	e.mu.Unlock()
@@ -593,6 +627,12 @@ func (e *Engine) ensureRemoteFolderTree(ctx context.Context, localDir string) (s
 	}
 
 	parts := strings.Split(relDir, string(filepath.Separator))
+	
+	// Pre-flight check: Google Drive limits folder nesting to 100 levels.
+	if len(parts) >= 100 {
+		return "", fmt.Errorf("Path too deep: Drive limit is 100 nested folders")
+	}
+
 	parentID := ""
 	curPath := matchedRoot
 
@@ -675,8 +715,16 @@ func (e *Engine) indexNewWatchRoot(ctx context.Context, watchPath string) {
 		}
 		if d.IsDir() {
 			if path != watchPath {
+				e.setStatusDir(path, StatusSyncing, "")
 				if _, err := e.ensureRemoteFolderTree(ctx, path); err != nil {
 					log.Error().Err(err).Str("path", path).Msg("Failed to sync folder structure")
+					errMsg := err.Error()
+					if strings.Contains(errMsg, "403") || strings.Contains(errMsg, "400") {
+						errMsg = "Path too deep: Drive limit is 100 nested folders"
+					}
+					e.setStatusDir(path, StatusError, errMsg)
+				} else {
+					e.setStatusDir(path, StatusSynced, "")
 				}
 			}
 			return nil

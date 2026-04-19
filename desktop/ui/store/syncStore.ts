@@ -11,6 +11,7 @@ export interface FileEntry {
   local_md5: string
   remote_md5: string
   size: number
+  is_dir?: boolean
   error?: string
 }
 

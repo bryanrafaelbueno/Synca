@@ -143,6 +143,12 @@ function TreeNodeView({ node, depth = 0 }: { node: TreeNode, depth?: number }) {
           <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
         </svg>
         <span className="tree-folder-name">{node.name}</span>
+        {node.file && node.file.status !== 'synced' && (
+          <div className="file-meta" style={{ marginLeft: 'auto' }}>
+            {node.file.error && <span className="file-error" style={{ marginRight: 8, fontSize: 11 }}>{node.file.error}</span>}
+            <StatusPill status={node.file.status} />
+          </div>
+        )}
       </div>
       {isOpen && (
         <div className="tree-children">
@@ -185,7 +191,7 @@ export function FileList({ sendCommand }: FileListProps) {
     
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
-      const isFile = (i === parts.length - 1);
+      const isFile = !f.is_dir && (i === parts.length - 1);
       // Construct a consistent internal tree path using forward slash
       const nodePath = '/' + parts.slice(0, i + 1).join('/');
       
@@ -201,6 +207,8 @@ export function FileList({ sendCommand }: FileListProps) {
       if (isFile) {
         current.children[part].file = f;
         current.children[part].isFolder = false;
+      } else if (f.is_dir && i === parts.length - 1) {
+        current.children[part].file = f;
       }
       current = current.children[part];
     }

@@ -23,12 +23,15 @@ function formatTime(iso: string | null): string {
 
 export function Sidebar({ sendCommand }: Props) {
   const stats = useSyncStore(selectStats)
+  const files = useSyncStore(state => state.snapshot?.files ?? [])
   const [isAutostart, setIsAutostart] = useState(false)
   const [isAppImage, setIsAppImage] = useState(false)
 
   const syncPct = stats.totalFiles > 0
     ? Math.round((stats.syncedFiles / stats.totalFiles) * 100)
     : 0
+
+  const hasDepthError = files.some(f => f.error && f.error.includes('100 nested folders'))
 
   useEffect(() => {
     const checkStatus = () => {
@@ -80,9 +83,20 @@ export function Sidebar({ sendCommand }: Props) {
         <div className="section-label">Progress</div>
         <div className="progress-block">
           <div className="progress-bar-bg">
-            <div className="progress-bar-fill" style={{ width: `${syncPct}%` }} />
+            <div 
+              className="progress-bar-fill" 
+              style={{ 
+                width: `${syncPct}%`, 
+                backgroundColor: hasDepthError ? '#e74c3c' : undefined 
+              }} 
+            />
           </div>
           <div className="progress-label">{stats.syncedFiles} / {stats.totalFiles} files</div>
+          {hasDepthError && (
+            <div style={{ color: '#e74c3c', fontSize: '11px', marginTop: '6px', lineHeight: 1.3 }}>
+              ⚠️ Drive limit: Max 100 nested folders reached.
+            </div>
+          )}
         </div>
       </div>
 
