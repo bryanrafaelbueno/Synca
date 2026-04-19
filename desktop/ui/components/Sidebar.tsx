@@ -130,7 +130,7 @@ export function Sidebar({ sendCommand }: Props) {
       )}
 
       <div className="sidebar-footer">
-        <span className="footer-version">v0.2.0-mvp</span>
+        <span className="footer-version">v0.3.0</span>
         <a
           className="footer-link"
           href="https://github.com/bryanrafaelbueno/synca"
