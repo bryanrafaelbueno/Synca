@@ -87,16 +87,16 @@ func (s *FileStatus) UnmarshalJSON(data []byte) error {
 
 // FileEntry tracks a file's sync state.
 type FileEntry struct {
-	LocalPath    string     `json:"local_path"`
-	RemoteID     string     `json:"remote_id"`
-	RemoteName   string     `json:"remote_name"`
-	Status       FileStatus `json:"status"`
-	LastSync     time.Time  `json:"last_sync"`
-	LocalMD5     string     `json:"local_md5"`
-	RemoteMD5    string     `json:"remote_md5"`
-	Size         int64      `json:"size"`
-	IsDir        bool       `json:"is_dir"`
-	ErrorMsg     string     `json:"error,omitempty"`
+	LocalPath  string     `json:"local_path"`
+	RemoteID   string     `json:"remote_id"`
+	RemoteName string     `json:"remote_name"`
+	Status     FileStatus `json:"status"`
+	LastSync   time.Time  `json:"last_sync"`
+	LocalMD5   string     `json:"local_md5"`
+	RemoteMD5  string     `json:"remote_md5"`
+	Size       int64      `json:"size"`
+	IsDir      bool       `json:"is_dir"`
+	ErrorMsg   string     `json:"error,omitempty"`
 }
 
 // StatusSnapshot is what the UI reads.
@@ -119,8 +119,8 @@ type Engine struct {
 
 	pathsMu sync.RWMutex // cfg.WatchPaths: coordinate with AddWatchRoot
 
-	mu      sync.RWMutex
-	files   map[string]*FileEntry // keyed by localPath
+	mu    sync.RWMutex
+	files map[string]*FileEntry // keyed by localPath
 	// remote state cache: remoteName → File
 	remoteCache map[string]*drive.File
 	// local directory path → remote folder ID
@@ -562,10 +562,6 @@ func (e *Engine) markQueuedIfNotExists(localPath string) {
 	e.markQueuedIfNotExistsInternal(localPath, false)
 }
 
-func (e *Engine) markQueuedDirIfNotExists(localPath string) {
-	e.markQueuedIfNotExistsInternal(localPath, true)
-}
-
 func (e *Engine) markQueuedIfNotExistsInternal(localPath string, isDir bool) {
 	e.mu.Lock()
 	entry := e.files[localPath]
@@ -694,7 +690,7 @@ func (e *Engine) ensureRemoteFolderTree(ctx context.Context, localDir string) (s
 	}
 
 	parts := strings.Split(relDir, string(filepath.Separator))
-	
+
 	// Pre-flight check: Google Drive limits folder nesting to 100 levels.
 	if len(parts) >= 100 {
 		return "", fmt.Errorf("Path too deep: Drive limit is 100 nested folders")
@@ -816,7 +812,6 @@ func (e *Engine) RemoveWatchRoot(ctx context.Context, path string) error {
 
 	return nil
 }
-
 
 func (e *Engine) indexNewWatchRoot(ctx context.Context, watchPath string) {
 	var filePaths []string
