@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type FileStatus = 'synced' | 'syncing' | 'queued' | 'conflict' | 'error'
+export type FileStatus = 'synced' | 'initializing' | 'uploading' | 'verifying' | 'finalizing' | 'queued' | 'conflict' | 'error'
 
 export interface FileEntry {
   local_path: string
@@ -17,6 +17,7 @@ export interface FileEntry {
 
 export interface StatusSnapshot {
   files: FileEntry[] | null
+  watch_paths: string[]
   total_bytes: number
   total_files: number
   synced_files: number
@@ -41,6 +42,7 @@ interface SyncStore {
 
 const defaultSnapshot: StatusSnapshot = {
   files: [],
+  watch_paths: [],
   total_bytes: 0,
   total_files: 0,
   synced_files: 0,

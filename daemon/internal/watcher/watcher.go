@@ -3,6 +3,7 @@ package watcher
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -52,6 +53,7 @@ type Watcher struct {
 
 	mu      sync.Mutex
 	timers  map[string]*time.Timer
+	watched map[string]struct{}
 }
 
 func New() (*Watcher, error) {
@@ -60,10 +62,11 @@ func New() (*Watcher, error) {
 		return nil, err
 	}
 	w := &Watcher{
-		fsw:    fsw,
-		Events: make(chan FileEvent, 256),
-		Errors: make(chan error, 16),
-		timers: make(map[string]*time.Timer),
+		fsw:     fsw,
+		Events:  make(chan FileEvent, 256),
+		Errors:  make(chan error, 16),
+		timers:  make(map[string]*time.Timer),
+		watched: make(map[string]struct{}),
 	}
 	go w.loop()
 	return w, nil
@@ -76,17 +79,32 @@ func (w *Watcher) Add(root string) error {
 			return nil // skip unreadable dirs
 		}
 		if d.IsDir() {
-			if err := w.fsw.Add(path); err != nil {
-				log.Warn().Str("path", path).Err(err).Msg("Could not watch directory")
+			w.mu.Lock()
+			if _, ok := w.watched[path]; !ok {
+				if err := w.fsw.Add(path); err != nil {
+					log.Warn().Str("path", path).Err(err).Msg("Could not watch directory")
+				} else {
+					w.watched[path] = struct{}{}
+				}
 			}
+			w.mu.Unlock()
 		}
 		return nil
 	})
 }
 
-// Remove stops watching a path.
+// Remove stops watching a path and its subdirectories.
 func (w *Watcher) Remove(path string) error {
-	return w.fsw.Remove(path)
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	for p := range w.watched {
+		if p == path || strings.HasPrefix(p, path+string(os.PathSeparator)) {
+			_ = w.fsw.Remove(p)
+			delete(w.watched, p)
+		}
+	}
+	return nil
 }
 
 // Close shuts down the watcher.

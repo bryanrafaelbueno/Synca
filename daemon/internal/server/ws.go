@@ -96,17 +96,20 @@ func (s *WebSocketServer) handleWS(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.clients[conn] = struct{}{}
 	s.mu.Unlock()
+	log.Info().Str("remote", conn.RemoteAddr().String()).Msg("WebSocket client connected")
 
 	defer func() {
 		s.mu.Lock()
 		delete(s.clients, conn)
 		s.mu.Unlock()
+		log.Info().Str("remote", conn.RemoteAddr().String()).Msg("WebSocket client disconnected")
 	}()
 
 	// initial snapshot
 	snap := s.engine.Snapshot()
 	if data, err := json.Marshal(snap); err == nil {
 		_ = conn.WriteMessage(websocket.TextMessage, data)
+		log.Debug().Int("files", len(snap.Files)).Msg("Sent initial snapshot to client")
 	}
 
 	for {
@@ -152,6 +155,16 @@ func (s *WebSocketServer) handleCommand(conn *websocket.Conn, msg []byte) {
 		if data, err := json.Marshal(snap); err == nil {
 			_ = conn.WriteMessage(websocket.TextMessage, data)
 		}
+	case "remove_watch":
+		if in.Path == "" {
+			s.writeWSError(conn, "folder path is missing")
+			return
+		}
+		go func() {
+			if err := s.engine.RemoveWatchRoot(context.Background(), in.Path); err != nil {
+				s.writeWSError(conn, err.Error())
+			}
+		}()
 	case "restart_daemon":
 		// Re-exec same binary as `… daemon` so the process comes back without relying on systemd.
 		go func() {

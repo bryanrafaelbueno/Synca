@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ask } from '@tauri-apps/plugin-dialog'
 import { useSyncStore, selectFiles, FileEntry, FileStatus } from '../store/syncStore'
 
 interface FileListProps {
@@ -8,7 +9,9 @@ interface FileListProps {
 type TreeNode = {
   name: string;
   path: string;
+  localPath: string;
   isFolder: boolean;
+  isWatchRoot?: boolean;
   children: Record<string, TreeNode>;
   file?: FileEntry;
 };
@@ -56,16 +59,20 @@ async function pickWatchFolder(): Promise<string | null> {
 
 const STATUS_LABELS: Record<FileStatus, string> = {
   synced: 'synced',
-  syncing: 'syncing…',
+  initializing: 'initializing…',
+  uploading: 'uploading…',
+  verifying: 'verifying…',
+  finalizing: 'finalizing…',
   queued: 'queued',
   conflict: 'conflict',
   error: 'error',
 }
 
 function StatusPill({ status }: { status: FileStatus }) {
+  const isProgressing = status === 'initializing' || status === 'uploading' || status === 'verifying' || status === 'finalizing';
   return (
     <span className={`pill pill-${status}`}>
-      {status === 'syncing' && <span className="pill-spinner" />}
+      {isProgressing && <span className="pill-spinner" />}
       {STATUS_LABELS[status]}
     </span>
   )
@@ -124,8 +131,19 @@ function FileRow({ entry, depth = 0 }: { entry: FileEntry, depth?: number }) {
   )
 }
 
-function TreeNodeView({ node, depth = 0 }: { node: TreeNode, depth?: number }) {
+function TreeNodeView({ node, depth = 0, sendCommand }: { node: TreeNode, depth?: number, sendCommand: (action: string, payload?: object) => void }) {
   const [isOpen, setIsOpen] = useState(true);
+
+  const handleRemove = async (path: string) => {
+    if (!path) return;
+    const confirmed = await ask(
+      `Are you sure you want to stop syncing this folder?\n\nThis will REMOVE all files from Google Drive, but keep your local files untouched.`,
+      { title: 'Remove Folder from Sync', kind: 'warning' }
+    );
+    if (confirmed) {
+      sendCommand('remove_watch', { path });
+    }
+  };
 
   if (!node.isFolder) {
     return <FileRow entry={node.file!} depth={depth} />;
@@ -143,12 +161,28 @@ function TreeNodeView({ node, depth = 0 }: { node: TreeNode, depth?: number }) {
           <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
         </svg>
         <span className="tree-folder-name">{node.name}</span>
-        {node.file && node.file.status !== 'synced' && (
-          <div className="file-meta" style={{ marginLeft: 'auto' }}>
-            {node.file.error && <span className="file-error" style={{ marginRight: 8, fontSize: 11 }}>{node.file.error}</span>}
-            <StatusPill status={node.file.status} />
-          </div>
-        )}
+        <div className="file-meta" style={{ marginLeft: 'auto' }}>
+          {node.file && node.file.status !== 'synced' && (
+            <>
+              {node.file.error && <span className="file-error" style={{ marginRight: 8, fontSize: 11 }}>{node.file.error}</span>}
+              <StatusPill status={node.file.status} />
+            </>
+          )}
+          {node.isWatchRoot && (
+            <button 
+              className="btn-remove-root"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleRemove(node.localPath);
+              }}
+              title="Remove from sync (deletes from Drive)"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6" />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
       {isOpen && (
         <div className="tree-children">
@@ -158,7 +192,7 @@ function TreeNodeView({ node, depth = 0 }: { node: TreeNode, depth?: number }) {
               return a.isFolder ? -1 : 1;
             })
             .map(child => (
-              <TreeNodeView key={child.path} node={child} depth={depth + 1} />
+              <TreeNodeView key={child.path} node={child} depth={depth + 1} sendCommand={sendCommand} />
           ))}
         </div>
       )}
@@ -183,9 +217,13 @@ export function FileList({ sendCommand }: FileListProps) {
     error: files.filter(f => f.status === 'error').length,
   }
 
-  const rootNode: TreeNode = { name: 'root', path: '', isFolder: true, children: {} };
+  const watchPaths = useSyncStore(state => state.snapshot?.watch_paths ?? []);
+
+  const rootNode: TreeNode = { name: 'root', path: '', localPath: '', isFolder: true, children: {} };
 
   files.forEach(f => {
+    const isWindows = f.local_path.includes('\\');
+    const sep = isWindows ? '\\' : '/';
     const parts = f.local_path.split(/[/\\]/).filter(Boolean);
     let current = rootNode;
     
@@ -195,13 +233,25 @@ export function FileList({ sendCommand }: FileListProps) {
       // Construct a consistent internal tree path using forward slash
       const nodePath = '/' + parts.slice(0, i + 1).join('/');
       
+      let localPathPrefix = parts.slice(0, i + 1).join(sep);
+      if (!isWindows) {
+          localPathPrefix = '/' + localPathPrefix;
+      } else if (localPathPrefix.length === 2 && localPathPrefix[1] === ':') {
+          localPathPrefix += '\\';
+      }
+      
       if (!current.children[part]) {
         current.children[part] = {
           name: part,
           path: nodePath,
+          localPath: localPathPrefix,
           isFolder: !isFile,
           children: {}
         };
+      }
+      
+      if (watchPaths.includes(localPathPrefix)) {
+        current.children[part].isWatchRoot = true;
       }
       
       if (isFile) {
@@ -217,6 +267,7 @@ export function FileList({ sendCommand }: FileListProps) {
   let displayRoots = Object.values(rootNode.children);
   while (displayRoots.length === 1 && displayRoots[0].isFolder) {
     const single = displayRoots[0];
+    if (single.isWatchRoot) break;
     const hasDirectFiles = Object.values(single.children).some(c => !c.isFolder);
     if (hasDirectFiles) break;
     displayRoots = Object.values(single.children);
@@ -231,7 +282,7 @@ export function FileList({ sendCommand }: FileListProps) {
         if (a.isFolder === b.isFolder) return a.name.localeCompare(b.name);
         return a.isFolder ? -1 : 1;
       })
-      .map(child => <TreeNodeView key={child.path} node={child} depth={0} />);
+      .map(node => <TreeNodeView key={node.path} node={node} sendCommand={sendCommand} />);
   }
 
   return (
