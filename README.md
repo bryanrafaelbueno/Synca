@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/status-Em_desenvolvimento-yellow"/>
+  <img src="https://img.shields.io/badge/status-In_Development-yellow"/>
   <img src="https://img.shields.io/badge/license-MIT-green"/>
   <img src="https://img.shields.io/badge/go-1.22+-00ADD8"/>
   <img src="https://img.shields.io/badge/tauri-2.x-FFC131"/>
