@@ -106,7 +106,8 @@ This will automatically handle all dependencies, build the project from source, 
 
 ### Manual Installation (From Source)
 
-#### 1. Clone the project
+#### 1. Setup Environment
+Ensure you have **Go**, **Rust**, and **Node.js** installed (see [Developer Guide](#-developer-guide--portability) for details).
 
 ```bash
 git clone https://github.com/bryanrafaelbueno/synca
@@ -119,39 +120,17 @@ cp .env.example .env
 make setup
 ```
 
----
-
-#### 2. Connect Google Drive
-
-Synca now uses an embedded OAuth client. To connect:
-
-1. Build and run Synca (`make dev` or use the installer).
-2. Click **"Log in to Google Drive"** in the UI.
-3. Authenticate in your browser and you're connected!
-
----
-
-#### 3. Choose folder
+#### 2. Run in Development Mode
+This will build the backend and start the frontend with hot-reload enabled.
 
 ```bash
-./bin/synca-daemon watch ~/Documents
+make dev
 ```
 
----
-
-#### 4. Start Synca
-
-```bash
-./bin/synca-daemon daemon
-```
-
----
-
-#### 5. Open interface
-
-```bash
-make app-dev
-```
+#### 3. Setup Synchronization
+1.  **Login**: Click **"Log in to Google Drive"** in the app.
+2.  **Add Folders**: Use the **"+"** button in the sidebar to select local folders you want to sync.
+3.  **Monitor**: Everything will now sync automatically in the background.
 
 ---
 
