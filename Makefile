@@ -170,12 +170,15 @@ release-linux: daemon
 	@echo "✅ Linux release ready"
 
 release-windows: daemon-windows
+	rm -rf desktop/src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/*
+
 	cd desktop && \
 	CARGO_HOME=$$(pwd)/.cargo-home \
 	CARGO_TARGET_DIR=$$(pwd)/src-tauri/target \
 	npm run tauri build -- --target x86_64-pc-windows-gnu
 
 	mkdir -p releases/windows
+	rm -rf releases/windows/*
 	cp desktop/src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/*.exe releases/windows/ || true
 
 # ── Dev ───────────────────────────────────────────────────────
