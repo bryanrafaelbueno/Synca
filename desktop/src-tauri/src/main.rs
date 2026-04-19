@@ -89,6 +89,19 @@ async fn pick_folder_dialog(app: tauri::AppHandle) -> Result<Option<String>, Str
 }
 
 #[tauri::command]
+async fn confirm_dialog(app: tauri::AppHandle, message: String, title: String) -> Result<bool, String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.dialog()
+        .message(message)
+        .title(title)
+        .kind(tauri_plugin_dialog::MessageDialogKind::Warning)
+        .show(move |result| {
+            let _ = tx.send(result);
+        });
+    Ok(rx.recv().map_err(|e| format!("Dialog channel error: {e}"))?)
+}
+
+#[tauri::command]
 async fn start_daemon(app: tauri::AppHandle, state: tauri::State<'_, DaemonState>) -> Result<(), String> {
     let _lock = state.spawn_lock.lock().await;
 
@@ -292,7 +305,8 @@ fn main() {
             start_daemon,
             restart_daemon,
             is_appimage_cmd,
-            pick_folder_dialog
+            pick_folder_dialog,
+            confirm_dialog
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

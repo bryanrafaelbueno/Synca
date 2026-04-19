@@ -136,10 +136,22 @@ function TreeNodeView({ node, depth = 0, sendCommand }: { node: TreeNode, depth?
 
   const handleRemove = async (path: string) => {
     if (!path) return;
-    const confirmed = await ask(
-      `Are you sure you want to stop syncing this folder?\n\nThis will REMOVE all files from Google Drive, but keep your local files untouched.`,
-      { title: 'Remove Folder from Sync', kind: 'warning' }
-    );
+    
+    let confirmed = false;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      confirmed = await invoke('confirm_dialog', {
+        title: 'Remove Folder from Sync',
+        message: `Are you sure you want to stop syncing this folder?\n\nThis will REMOVE all files from Google Drive, but keep your local files untouched.`
+      });
+    } catch (err) {
+      console.warn('[handleRemove] Rust dialog failed, falling back to JS:', err);
+      confirmed = await ask(
+        `Are you sure you want to stop syncing this folder?\n\nThis will REMOVE all files from Google Drive, but keep your local files untouched.`,
+        { title: 'Remove Folder from Sync', kind: 'warning' }
+      );
+    }
+
     if (confirmed) {
       sendCommand('remove_watch', { path });
     }
