@@ -8,24 +8,16 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/status-MVP-orange"/>
+  <img src="https://img.shields.io/badge/status-Em_desenvolvimento-yellow"/>
   <img src="https://img.shields.io/badge/license-MIT-green"/>
   <img src="https://img.shields.io/badge/go-1.22+-00ADD8"/>
   <img src="https://img.shields.io/badge/tauri-2.x-FFC131"/>
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20windows-lightgrey"/>
 </p>
 
----
-> [!WARNING]
-> **This project is currently in MVP (Minimum Viable Product) stage.**  
-> It is functional and usable, but may contain bugs, missing features, or breaking changes.  
-> Use it with caution in production environments.
+## 📦 Download (Release)
 
----
-
-## 📦 Download (MVP Release)
-
-👉 A compiled **MVP version is already available on GitHub Releases**.
+👉 A compiled **version is already available on GitHub Releases**.
 
 You can download ready-to-use builds for Linux and Windows without building from source:
 
@@ -100,7 +92,21 @@ synca/
 
 ## 📦 Installation
 
-### 1. Clone the project
+### Arch Linux (AUR)
+
+If you are using Arch Linux, you can install Synca via the AUR using a helper like `yay`:
+
+```bash
+yay -S synca
+```
+
+This will automatically handle all dependencies, build the project from source, and set up the systemd user service.
+
+---
+
+### Manual Installation (From Source)
+
+#### 1. Clone the project
 
 ```bash
 git clone https://github.com/bryanrafaelbueno/synca
@@ -115,7 +121,7 @@ make setup
 
 ---
 
-### 2. Connect Google Drive
+#### 2. Connect Google Drive
 
 Synca now uses an embedded OAuth client. To connect:
 
@@ -125,7 +131,7 @@ Synca now uses an embedded OAuth client. To connect:
 
 ---
 
-### 3. Choose folder
+#### 3. Choose folder
 
 ```bash
 ./bin/synca-daemon watch ~/Documents
@@ -133,7 +139,7 @@ Synca now uses an embedded OAuth client. To connect:
 
 ---
 
-### 5. Start Synca
+#### 4. Start Synca
 
 ```bash
 ./bin/synca-daemon daemon
@@ -141,7 +147,7 @@ Synca now uses an embedded OAuth client. To connect:
 
 ---
 
-### 6. Open interface
+#### 5. Open interface
 
 ```bash
 make app-dev
@@ -274,4 +280,8 @@ MIT © Synca Contributors
 
 ---
 
-<p align="center">🇧🇷 Made in Brazil 🇧🇷</p>
+## ☕ Support the project
+If this project helps you, consider supporting development: </br>
+<a href="https://www.buymeacoffee.com/bryanrafaelbueno" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" alt="Buy Me A Coffee" style="height: 41px !important;width: 174px !important;box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;-webkit-box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;" ></a> </br>
+
+<h2 align="center">🇧🇷 Made in Brazil 🇧🇷</h2>
