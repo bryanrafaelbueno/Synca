@@ -31,8 +31,17 @@ export function Sidebar({ sendCommand }: Props) {
     : 0
 
   useEffect(() => {
-    isEnabled().then(setIsAutostart).catch(console.error)
-    invoke<boolean>('is_appimage_cmd').then(setIsAppImage).catch(console.error)
+    const checkStatus = () => {
+      isEnabled().then(setIsAutostart).catch(console.error)
+      invoke<boolean>('is_appimage_cmd').then(setIsAppImage).catch(console.error)
+    }
+    
+    // Check initially
+    checkStatus()
+
+    // Re-check every time the window gains focus (e.g., restored from tray)
+    window.addEventListener('focus', checkStatus)
+    return () => window.removeEventListener('focus', checkStatus)
   }, [])
 
   const toggleAutostart = async () => {
