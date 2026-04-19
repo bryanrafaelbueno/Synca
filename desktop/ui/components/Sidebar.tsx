@@ -38,7 +38,7 @@ export function Sidebar({ sendCommand }: Props) {
       isEnabled().then(setIsAutostart).catch(console.error)
       invoke<boolean>('is_appimage_cmd').then(setIsAppImage).catch(console.error)
     }
-    
+
     // Check initially
     checkStatus()
 
@@ -83,12 +83,12 @@ export function Sidebar({ sendCommand }: Props) {
         <div className="section-label">Progress</div>
         <div className="progress-block">
           <div className="progress-bar-bg">
-            <div 
-              className="progress-bar-fill" 
-              style={{ 
-                width: `${syncPct}%`, 
-                backgroundColor: hasDepthError ? '#e74c3c' : undefined 
-              }} 
+            <div
+              className="progress-bar-fill"
+              style={{
+                width: `${syncPct}%`,
+                backgroundColor: hasDepthError ? '#e74c3c' : undefined
+              }}
             />
           </div>
           <div className="progress-label">{stats.syncedFiles} / {stats.totalFiles} files</div>
@@ -153,7 +153,7 @@ export function Sidebar({ sendCommand }: Props) {
       )}
 
       <div className="sidebar-footer">
-        <span className="footer-version">v0.3.0</span>
+        <span className="footer-version">v0.3.1</span>
         <a
           className="footer-link"
           href="https://github.com/bryanrafaelbueno/synca"
