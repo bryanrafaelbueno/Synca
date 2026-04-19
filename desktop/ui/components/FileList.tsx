@@ -103,6 +103,15 @@ function FileIcon({ path }: { path: string }) {
   )
 }
 
+function TreeGuides({ depth }: { depth: number }) {
+  const guides = [];
+  for (let i = 0; i < depth; i++) {
+    const left = 20 + i * 16 + 7;
+    guides.push(<div key={i} className="tree-guide" style={{ left }} />);
+  }
+  return <>{guides}</>;
+}
+
 function FileRow({ entry, depth = 0 }: { entry: FileEntry, depth?: number }) {
   const fileName = entry.local_path.split(/[/\\]/).pop() ?? entry.local_path
 
@@ -118,6 +127,7 @@ function FileRow({ entry, depth = 0 }: { entry: FileEntry, depth?: number }) {
       className={`file-row ${entry.status === 'conflict' ? 'file-row-conflict' : ''}`}
       style={{ paddingLeft: 20 + depth * 16 }}
     >
+      <TreeGuides depth={depth} />
       <FileIcon path={entry.local_path} />
       <div className="file-info">
         <div className="file-name">{fileName}</div>
@@ -168,6 +178,7 @@ function TreeNodeView({ node, depth = 0, sendCommand }: { node: TreeNode, depth?
         style={{ paddingLeft: 20 + depth * 16 }}
         onClick={() => setIsOpen(!isOpen)}
       >
+        <TreeGuides depth={depth} />
         <span className="tree-chevron">{isOpen ? '▼' : '▶'}</span>
         <svg className="folder-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
           <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
