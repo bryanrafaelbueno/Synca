@@ -207,8 +207,8 @@ synca status
 * [x] Automatic upload
 * [x] Functional interface
 * [x] Conflicts
+* [x] System tray
 * [ ] Full bidirectional sync
-* [ ] System tray
 * [ ] Multi-cloud (Rclone)
 
 ---
