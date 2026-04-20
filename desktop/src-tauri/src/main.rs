@@ -5,7 +5,6 @@ mod cli;
 
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_dialog::DialogExt;
-use tauri_plugin_autostart::ManagerExt;
 use tauri::{Manager, menu::{MenuBuilder, MenuItemBuilder}, tray::TrayIconBuilder, WindowEvent};
 
 /// Detecta se está rodando como AppImage
@@ -264,20 +263,6 @@ fn can_autostart() -> bool {
     }
 }
 
-#[tauri::command]
-fn is_autostart_enabled(app: tauri::AppHandle) -> bool {
-    app.autostart().is_enabled().unwrap_or(false)
-}
-
-#[tauri::command]
-async fn set_autostart(app: tauri::AppHandle, enable: bool) -> Result<(), String> {
-    if enable {
-        app.autostart().enable().map_err(|e| e.to_string())
-    } else {
-        app.autostart().disable().map_err(|e| e.to_string())
-    }
-}
-
 fn main() {
     cli::forward_to_daemon_if_cli();
 
@@ -338,8 +323,6 @@ fn main() {
             restart_daemon,
             is_appimage_cmd,
             can_autostart,
-            is_autostart_enabled,
-            set_autostart,
             pick_folder_dialog,
             confirm_dialog
         ])

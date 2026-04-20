@@ -1,5 +1,6 @@
 import { useSyncStore, selectStats } from '../store/syncStore'
 import { useState, useEffect } from 'react'
+import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart'
 import { invoke } from '@tauri-apps/api/core'
 import brandLogo from '../../src-tauri/icons/icon.png'
 
@@ -34,7 +35,7 @@ export function Sidebar({ sendCommand }: Props) {
 
   useEffect(() => {
     const checkStatus = () => {
-      invoke<boolean>('is_autostart_enabled').then(setIsAutostart).catch(console.error)
+      isEnabled().then(setIsAutostart).catch(console.error)
       invoke<boolean>('can_autostart').then(setCanAutostart).catch(console.error)
     }
 
@@ -48,9 +49,13 @@ export function Sidebar({ sendCommand }: Props) {
 
   const toggleAutostart = async () => {
     try {
-      const nextState = !isAutostart
-      await invoke('set_autostart', { enable: nextState })
-      setIsAutostart(nextState)
+      if (isAutostart) {
+        await disable()
+        setIsAutostart(false)
+      } else {
+        await enable()
+        setIsAutostart(true)
+      }
     } catch (e) {
       console.error('Failed to toggle autostart:', e)
     }
