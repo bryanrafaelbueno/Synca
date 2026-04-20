@@ -25,7 +25,7 @@ export function Sidebar({ sendCommand }: Props) {
   const stats = useSyncStore(selectStats)
   const files = useSyncStore(state => state.snapshot?.files ?? [])
   const [isAutostart, setIsAutostart] = useState(false)
-  const [isAppImage, setIsAppImage] = useState(false)
+  const [canAutostart, setCanAutostart] = useState(true)
 
   const syncPct = stats.totalFiles > 0
     ? Math.round((stats.syncedFiles / stats.totalFiles) * 100)
@@ -36,7 +36,7 @@ export function Sidebar({ sendCommand }: Props) {
   useEffect(() => {
     const checkStatus = () => {
       isEnabled().then(setIsAutostart).catch(console.error)
-      invoke<boolean>('is_appimage_cmd').then(setIsAppImage).catch(console.error)
+      invoke<boolean>('can_autostart').then(setCanAutostart).catch(console.error)
     }
 
     // Check initially
@@ -135,7 +135,7 @@ export function Sidebar({ sendCommand }: Props) {
         </button>
       </div>
 
-      {!isAppImage && (
+      {canAutostart && (
         <div className="sidebar-section">
           <div className="section-label">Settings</div>
           <div className="settings-row">

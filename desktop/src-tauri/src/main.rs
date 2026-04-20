@@ -246,6 +246,23 @@ async fn restart_daemon(app: tauri::AppHandle, state: tauri::State<'_, DaemonSta
     start_daemon(app, state).await
 }
 
+#[tauri::command]
+fn can_autostart() -> bool {
+    if !is_appimage() {
+        return true;
+    }
+    
+    // If it is an AppImage, check if it's in a stable location
+    if let Ok(appimage_path) = std::env::var("APPIMAGE") {
+        // Safe if in /usr/ (AUR), /opt/, or ~/.local/bin/
+        appimage_path.starts_with("/usr/") || 
+        appimage_path.starts_with("/opt/") || 
+        appimage_path.contains("/.local/bin/")
+    } else {
+        false
+    }
+}
+
 fn main() {
     cli::forward_to_daemon_if_cli();
 
@@ -305,6 +322,7 @@ fn main() {
             start_daemon,
             restart_daemon,
             is_appimage_cmd,
+            can_autostart,
             pick_folder_dialog,
             confirm_dialog
         ])
