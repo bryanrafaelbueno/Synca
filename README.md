@@ -97,10 +97,16 @@ synca/
 If you are using Arch Linux, you can install Synca via the AUR using a helper like `yay`:
 
 ```bash
+yay -S synca-bin
+
+or
+
 yay -S synca
 ```
 
-This will automatically handle all dependencies, build the project from source, and set up the systemd user service.
+The bin downloads the AppImage and put on the /usr/bin/, more easy to install.
+
+The synca one, automatically handle all dependencies, build the project from source, and set up the systemd user service.
 
 ---
 
