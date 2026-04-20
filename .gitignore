@@ -17,6 +17,7 @@ daemon/internal/auth/.env.embedded
 !desktop/package.json
 !desktop/tsconfig.json
 !desktop/src-tauri/tauri.conf.json
+!desktop/src-tauri/capabilities/*.json
 
 # Config & tokens
 ~/.config/synca/
