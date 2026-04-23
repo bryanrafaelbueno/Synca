@@ -56,6 +56,10 @@ func (s *WebSocketServer) Start(addr string) error {
 	})
 	mux.HandleFunc("/quit", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "POST" {
+			if !upgrader.CheckOrigin(r) {
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
 			log.Info().Msg("Received quit signal via HTTP, shutting down gracefully...")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"ok":true}`))
@@ -67,7 +71,7 @@ func (s *WebSocketServer) Start(addr string) error {
 	})
 
 	log.Info().Str("addr", addr).Msg("WebSocket server listening")
-	
+
 	var listener net.Listener
 	var err error
 	for i := 0; i < 10; i++ {
