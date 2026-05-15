@@ -1,6 +1,41 @@
 import { useState } from 'react'
 import { ask } from '@tauri-apps/plugin-dialog'
-import { useSyncStore, selectFiles, FileEntry, FileStatus } from '../store/syncStore'
+import { useSyncStore, selectFiles, FileEntry, FileStatus, SyncMode } from '../store/syncStore'
+
+const SYNC_MODE_LABELS: Record<SyncMode, { label: string; icon: string; desc: string }> = {
+  two_way:       { label: 'Two-Way',      icon: '⇅', desc: 'Sync both directions' },
+  upload_only:   { label: 'Upload Only',  icon: '↑', desc: 'Local → Drive only' },
+  download_only: { label: 'Download Only',icon: '↓', desc: 'Drive → Local only' },
+}
+
+function SyncModeSelector({ value, onChange }: { value: SyncMode; onChange: (m: SyncMode) => void }) {
+  return (
+    <div className="sync-mode-selector">
+      {(Object.keys(SYNC_MODE_LABELS) as SyncMode[]).map(mode => (
+        <button
+          key={mode}
+          type="button"
+          className={`sync-mode-btn ${value === mode ? 'active' : ''}`}
+          onClick={() => onChange(mode)}
+          title={SYNC_MODE_LABELS[mode].desc}
+        >
+          <span className="sync-mode-icon">{SYNC_MODE_LABELS[mode].icon}</span>
+          <span>{SYNC_MODE_LABELS[mode].label}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function SyncModeBadge({ mode }: { mode: SyncMode }) {
+  const info = SYNC_MODE_LABELS[mode]
+  if (!info) return null
+  return (
+    <span className={`sync-mode-badge sync-mode-badge-${mode}`} title={info.desc}>
+      {info.icon} {info.label}
+    </span>
+  )
+}
 
 interface FileListProps {
   sendCommand: (action: string, payload?: object) => void
@@ -143,6 +178,8 @@ function FileRow({ entry, depth = 0 }: { entry: FileEntry, depth?: number }) {
 
 function TreeNodeView({ node, depth = 0, sendCommand }: { node: TreeNode, depth?: number, sendCommand: (action: string, payload?: object) => void }) {
   const [isOpen, setIsOpen] = useState(true);
+  const [editingMode, setEditingMode] = useState(false);
+  const watchModes = useSyncStore(state => state.snapshot?.watch_path_modes ?? {});
 
   const handleRemove = async (path: string) => {
     if (!path) return;
@@ -167,9 +204,16 @@ function TreeNodeView({ node, depth = 0, sendCommand }: { node: TreeNode, depth?
     }
   };
 
+  const handleModeChange = (mode: SyncMode) => {
+    sendCommand('update_watch', { path: node.localPath, mode });
+    setEditingMode(false);
+  };
+
   if (!node.isFolder) {
     return <FileRow entry={node.file!} depth={depth} />;
   }
+
+  const currentMode = (node.isWatchRoot ? watchModes[node.localPath] : undefined) as SyncMode | undefined;
 
   return (
     <div className="tree-node">
@@ -191,6 +235,15 @@ function TreeNodeView({ node, depth = 0, sendCommand }: { node: TreeNode, depth?
               <StatusPill status={node.file.status} />
             </>
           )}
+          {node.isWatchRoot && currentMode && (
+            <span
+              className="sync-mode-badge-wrap"
+              onClick={(e) => { e.stopPropagation(); setEditingMode(!editingMode); }}
+              title="Click to change sync mode"
+            >
+              <SyncModeBadge mode={currentMode} />
+            </span>
+          )}
           {node.isWatchRoot && (
             <button 
               className="btn-remove-root"
@@ -207,6 +260,11 @@ function TreeNodeView({ node, depth = 0, sendCommand }: { node: TreeNode, depth?
           )}
         </div>
       </div>
+      {editingMode && node.isWatchRoot && currentMode && (
+        <div className="sync-mode-edit-row" onClick={(e) => e.stopPropagation()}>
+          <SyncModeSelector value={currentMode} onChange={handleModeChange} />
+        </div>
+      )}
       {isOpen && (
         <div className="tree-children">
           {Object.values(node.children)
@@ -226,13 +284,22 @@ function TreeNodeView({ node, depth = 0, sendCommand }: { node: TreeNode, depth?
 export function FileList({ sendCommand }: FileListProps) {
   const files = useSyncStore(selectFiles)
   const { searchQuery, setSearchQuery, connected, lastWsError, setLastWsError } = useSyncStore()
+  const [pendingFolder, setPendingFolder] = useState<string | null>(null)
+  const [pendingMode, setPendingMode] = useState<SyncMode>('two_way')
 
   const onAddWatchFolder = async () => {
     if (!connected) return
     setLastWsError(null)
     const path = await pickWatchFolder()
     if (!path) return
-    sendCommand('add_watch', { path })
+    setPendingFolder(path)
+    setPendingMode('two_way')
+  }
+
+  const confirmAddFolder = () => {
+    if (!pendingFolder) return
+    sendCommand('add_watch', { path: pendingFolder, mode: pendingMode })
+    setPendingFolder(null)
   }
 
   const counts = {
@@ -383,6 +450,23 @@ export function FileList({ sendCommand }: FileListProps) {
 
         {connected && files.length > 0 && displayContent}
       </div>
+
+      {/* ── Add-folder mode selector modal ── */}
+      {pendingFolder && (
+        <div className="add-folder-modal-overlay" onClick={() => setPendingFolder(null)}>
+          <div className="add-folder-modal" onClick={(e) => e.stopPropagation()}>
+            <h3 className="add-folder-modal-title">Choose Sync Mode</h3>
+            <p className="add-folder-modal-path" title={pendingFolder}>
+              {pendingFolder.split(/[/\\]/).pop()}
+            </p>
+            <SyncModeSelector value={pendingMode} onChange={setPendingMode} />
+            <div className="add-folder-modal-actions">
+              <button type="button" className="btn-modal-cancel" onClick={() => setPendingFolder(null)}>Cancel</button>
+              <button type="button" className="btn-modal-confirm" onClick={confirmAddFolder}>Add Folder</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

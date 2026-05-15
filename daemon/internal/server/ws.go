@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
 
+	"github.com/synca/daemon/internal/config"
 	syncengine "github.com/synca/daemon/internal/sync"
 )
 
@@ -134,6 +135,7 @@ func (s *WebSocketServer) handleCommand(conn *websocket.Conn, msg []byte) {
 	var in struct {
 		Action string `json:"action"`
 		Path   string `json:"path"`
+		Mode   string `json:"mode"`
 	}
 
 	if err := json.Unmarshal(msg, &in); err != nil {
@@ -151,7 +153,22 @@ func (s *WebSocketServer) handleCommand(conn *websocket.Conn, msg []byte) {
 			s.writeWSError(conn, "folder path is missing")
 			return
 		}
-		if err := s.engine.AddWatchRoot(context.Background(), in.Path); err != nil {
+		mode := config.ParseSyncMode(in.Mode)
+		if err := s.engine.AddWatchRootWithMode(context.Background(), in.Path, mode); err != nil {
+			s.writeWSError(conn, err.Error())
+			return
+		}
+		snap := s.engine.Snapshot()
+		if data, err := json.Marshal(snap); err == nil {
+			_ = conn.WriteMessage(websocket.TextMessage, data)
+		}
+	case "update_watch":
+		if strings.TrimSpace(in.Path) == "" {
+			s.writeWSError(conn, "folder path is missing")
+			return
+		}
+		mode := config.ParseSyncMode(in.Mode)
+		if err := s.engine.UpdateWatchMode(in.Path, mode); err != nil {
 			s.writeWSError(conn, err.Error())
 			return
 		}

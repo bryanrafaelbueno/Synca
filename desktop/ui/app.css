@@ -926,3 +926,218 @@ input:checked+.slider:before {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text2);
 }
+
+/* ── Sync Mode UI ─────────────────────────────────────────────── */
+
+.sync-mode-badge-wrap {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 8px;
+  cursor: pointer;
+  opacity: 0.8;
+  transition: opacity 0.15s;
+}
+
+.sync-mode-badge-wrap:hover {
+  opacity: 1;
+}
+
+.sync-mode-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.02em;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 0.5px solid var(--border-md);
+  background: var(--bg2);
+  color: var(--text1);
+}
+
+.sync-mode-badge-two_way {
+  background: #E6F1FB;
+  color: #185FA5;
+  border-color: color-mix(in srgb, #185FA5 20%, transparent);
+}
+
+.sync-mode-badge-upload_only {
+  background: #F1EFE8;
+  color: #5F5E5A;
+  border-color: color-mix(in srgb, #5F5E5A 20%, transparent);
+}
+
+.sync-mode-badge-download_only {
+  background: #EAF3DE;
+  color: #3B6D11;
+  border-color: color-mix(in srgb, #3B6D11 20%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  .sync-mode-badge-two_way {
+    background: #0C447C;
+    color: #B5D4F4;
+  }
+  .sync-mode-badge-upload_only {
+    background: #444441;
+    color: #D3D1C7;
+  }
+  .sync-mode-badge-download_only {
+    background: #27500A;
+    color: #C0DD97;
+  }
+}
+
+.sync-mode-edit-row {
+  padding: 8px 20px 12px 42px;
+  background: var(--bg1);
+  border-bottom: 0.5px solid var(--border);
+  animation: slideDown 0.15s ease-out;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.sync-mode-selector {
+  display: flex;
+  gap: 8px;
+  background: var(--bg2);
+  padding: 4px;
+  border-radius: var(--radius-md);
+  border: 0.5px solid var(--border-md);
+}
+
+.sync-mode-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text1);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.sync-mode-btn:hover {
+  color: var(--text0);
+  background: rgba(0, 0, 0, 0.04);
+}
+
+@media (prefers-color-scheme: dark) {
+  .sync-mode-btn:hover { background: rgba(255, 255, 255, 0.04); }
+}
+
+.sync-mode-btn.active {
+  background: var(--bg0);
+  color: var(--text0);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.sync-mode-icon {
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+/* ── Add Folder Modal ── */
+.add-folder-modal-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  animation: fadeIn 0.15s;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.add-folder-modal {
+  background: var(--bg0);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  width: 360px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15);
+  border: 0.5px solid var(--border-md);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: modalSlideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalSlideUp {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.add-folder-modal-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text0);
+  margin: 0;
+}
+
+.add-folder-modal-path {
+  font-size: 13px;
+  color: var(--text1);
+  background: var(--bg1);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 0.5px solid var(--border-md);
+  font-family: monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.add-folder-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.btn-modal-cancel {
+  padding: 8px 16px;
+  background: transparent;
+  border: 0.5px solid var(--border-md);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text1);
+  cursor: pointer;
+}
+
+.btn-modal-cancel:hover {
+  background: var(--bg2);
+  color: var(--text0);
+}
+
+.btn-modal-confirm {
+  padding: 8px 16px;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 500;
+  color: #fff;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.btn-modal-confirm:hover {
+  opacity: 0.9;
+}

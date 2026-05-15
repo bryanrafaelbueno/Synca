@@ -8,12 +8,13 @@ import (
 )
 
 type Config struct {
-	WSAddr      string   `json:"ws_addr"`
-	WatchPaths  []string `json:"watch_paths"`
-	TokenFile   string   `json:"token_file"`
-	CredFile    string   `json:"cred_file"`
-	ConflictDir string   `json:"conflict_dir"`
-	LogLevel    string   `json:"log_level"`
+	WSAddr         string              `json:"ws_addr"`
+	WatchPaths     []string            `json:"watch_paths"`
+	WatchPathModes map[string]SyncMode `json:"watch_path_modes,omitempty"`
+	TokenFile      string              `json:"token_file"`
+	CredFile       string              `json:"cred_file"`
+	ConflictDir    string              `json:"conflict_dir"`
+	LogLevel       string              `json:"log_level"`
 	// Internal (not persisted)
 	configPath string `json:"-"`
 }
@@ -82,6 +83,11 @@ func Load() (*Config, error) {
 		normalized = append(normalized, np)
 	}
 	cfg.WatchPaths = normalized
+
+	// Ensure mode map is always initialised (backward compat with older configs)
+	if cfg.WatchPathModes == nil {
+		cfg.WatchPathModes = make(map[string]SyncMode)
+	}
 	return cfg, nil
 }
 
@@ -94,6 +100,11 @@ func (c *Config) Save() error {
 }
 
 func (c *Config) AddWatchPath(path string) {
+	c.AddWatchPathWithMode(path, ModeTwoWay)
+}
+
+// AddWatchPathWithMode adds a path with a specific sync mode.
+func (c *Config) AddWatchPathWithMode(path string, mode SyncMode) {
 	path = normalizePath(path)
 	if path == "" {
 		return
@@ -104,6 +115,10 @@ func (c *Config) AddWatchPath(path string) {
 		}
 	}
 	c.WatchPaths = append(c.WatchPaths, path)
+	if c.WatchPathModes == nil {
+		c.WatchPathModes = make(map[string]SyncMode)
+	}
+	c.WatchPathModes[path] = mode
 }
 
 func (c *Config) RemoveWatchPath(path string) {
@@ -115,6 +130,28 @@ func (c *Config) RemoveWatchPath(path string) {
 		}
 	}
 	c.WatchPaths = filtered
+	delete(c.WatchPathModes, path)
+}
+
+// GetWatchPathMode returns the sync mode for a given watch path.
+// Defaults to ModeTwoWay if not explicitly set (backward compat).
+func (c *Config) GetWatchPathMode(path string) SyncMode {
+	if c.WatchPathModes == nil {
+		return ModeTwoWay
+	}
+	mode, ok := c.WatchPathModes[path]
+	if !ok {
+		return ModeTwoWay
+	}
+	return mode
+}
+
+// SetWatchPathMode updates the sync mode for a watch path.
+func (c *Config) SetWatchPathMode(path string, mode SyncMode) {
+	if c.WatchPathModes == nil {
+		c.WatchPathModes = make(map[string]SyncMode)
+	}
+	c.WatchPathModes[path] = mode
 }
 
 func normalizePath(path string) string {

@@ -101,13 +101,14 @@ type FileEntry struct {
 
 // StatusSnapshot is what the UI reads.
 type StatusSnapshot struct {
-	Files       []*FileEntry `json:"files"`
-	WatchPaths  []string     `json:"watch_paths"`
-	TotalBytes  int64        `json:"total_bytes"`
-	TotalFiles  int          `json:"total_files"`
-	SyncedFiles int          `json:"synced_files"`
-	IsRunning   bool         `json:"is_running"`
-	LastUpdated time.Time    `json:"last_updated"`
+	Files          []*FileEntry      `json:"files"`
+	WatchPaths     []string          `json:"watch_paths"`
+	WatchPathModes map[string]string `json:"watch_path_modes"`
+	TotalBytes     int64             `json:"total_bytes"`
+	TotalFiles     int               `json:"total_files"`
+	SyncedFiles    int               `json:"synced_files"`
+	IsRunning      bool              `json:"is_running"`
+	LastUpdated    time.Time         `json:"last_updated"`
 }
 
 // Engine is the core sync orchestrator.
@@ -255,9 +256,15 @@ func (e *Engine) worker(ctx context.Context) {
 func (e *Engine) handleEvent(ctx context.Context, event watcher.FileEvent) {
 	path := event.Path
 
+	// ── Mode gate: skip local events if mode does not process them ──
+	mode := e.modeForPath(path)
+	if !mode.ShouldProcessLocalEvents() {
+		return
+	}
+
 	// Keep folder structure in Drive when local directories are created.
 	if fi, err := os.Stat(path); err == nil && fi.IsDir() {
-		if event.Kind == watcher.EventCreate {
+		if event.Kind == watcher.EventCreate && mode.AllowsUpload() {
 			e.setStatusDir(path, StatusInitializing, "")
 			if _, err := e.ensureRemoteFolderTree(ctx, path); err != nil {
 				log.Error().Err(err).Str("path", path).Msg("Failed to sync folder")
@@ -356,8 +363,8 @@ func (e *Engine) uploadFile(ctx context.Context, localPath string) {
 		return
 	}
 
-	// Check for conflict
-	if remoteFile != nil {
+	// Check for conflict (only in TwoWay mode)
+	if remoteFile != nil && e.modeForPath(localPath).AllowsConflictResolution() {
 		fi, _ := os.Stat(localPath)
 		localModTime := time.Time{}
 		if fi != nil {
@@ -453,42 +460,55 @@ func (e *Engine) fullSync(ctx context.Context) {
 	}
 	e.mu.Unlock()
 
-	// Upload any local files not yet in Drive (throttled to avoid flooding the queue)
+	// Process each watch root according to its mode
 	e.pathsMu.RLock()
 	roots := slices.Clone(e.cfg.WatchPaths)
 	e.pathsMu.RUnlock()
 	var paths []string
 	for _, watchPath := range roots {
-		_ = filepath.WalkDir(watchPath, func(path string, d os.DirEntry, err error) error {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			if err != nil {
-				return nil
-			}
-			if d.IsDir() {
-				if path != watchPath {
-					e.setStatusDir(path, StatusInitializing, "")
-					if _, err := e.ensureRemoteFolderTree(ctx, path); err != nil {
-						log.Error().Err(err).Str("path", path).Msg("Failed to sync folder during full sync")
-						errMsg := err.Error()
-						if strings.Contains(errMsg, "403") || strings.Contains(errMsg, "400") {
-							errMsg = "Path too deep: Drive limit is 100 nested folders"
-						}
-						e.setStatusDir(path, StatusError, errMsg)
-					} else {
-						e.setStatusDir(path, StatusSynced, "")
-					}
+		mode := e.modeForPath(watchPath)
+
+		// Always ensure the root folder exists in state so the UI displays it even if empty
+		e.setStatusDir(watchPath, StatusSynced, "")
+
+		// ── Upload side: scan local files (TwoWay + UploadOnly) ──
+		if mode.AllowsUpload() {
+			_ = filepath.WalkDir(watchPath, func(path string, d os.DirEntry, err error) error {
+				if ctx.Err() != nil {
+					return ctx.Err()
 				}
+				if err != nil {
+					return nil
+				}
+				if d.IsDir() {
+					if path != watchPath {
+						e.setStatusDir(path, StatusInitializing, "")
+						if _, err := e.ensureRemoteFolderTree(ctx, path); err != nil {
+							log.Error().Err(err).Str("path", path).Msg("Failed to sync folder during full sync")
+							errMsg := err.Error()
+							if strings.Contains(errMsg, "403") || strings.Contains(errMsg, "400") {
+								errMsg = "Path too deep: Drive limit is 100 nested folders"
+							}
+							e.setStatusDir(path, StatusError, errMsg)
+						} else {
+							e.setStatusDir(path, StatusSynced, "")
+						}
+					}
+					return nil
+				}
+				if isTempFile(path) {
+					return nil
+				}
+				paths = append(paths, path)
+				e.markQueuedIfNotExists(path)
 				return nil
-			}
-			if isTempFile(path) {
-				return nil
-			}
-			paths = append(paths, path)
-			e.markQueuedIfNotExists(path)
-			return nil
-		})
+			})
+		}
+
+		// ── Download side: fetch remote files (TwoWay + DownloadOnly) ──
+		if mode.AllowsDownload() {
+			e.downloadRemoteFiles(ctx, watchPath)
+		}
 	}
 
 	count := 0
@@ -509,15 +529,137 @@ func (e *Engine) fullSync(ctx context.Context) {
 }
 
 func (e *Engine) pollRemote(ctx context.Context) {
-	remoteFiles, err := e.drive.ListFiles(ctx, "")
+	// Download new/changed remote files for roots that allow downloads
+	e.pathsMu.RLock()
+	roots := slices.Clone(e.cfg.WatchPaths)
+	e.pathsMu.RUnlock()
+	for _, root := range roots {
+		mode := e.modeForPath(root)
+		if mode.ShouldProcessRemoteEvents() {
+			e.downloadRemoteFiles(ctx, root)
+		}
+	}
+}
+
+// downloadRemoteFiles fetches files from Drive that are missing or outdated locally.
+// It walks the remote folder hierarchy corresponding to watchRoot.
+func (e *Engine) downloadRemoteFiles(ctx context.Context, watchRoot string) {
+	// Find the remote folder ID that matches this watch root
+	e.mu.RLock()
+	remoteFolderID, hasCached := e.folderCache[watchRoot]
+	e.mu.RUnlock()
+
+	if !hasCached {
+		id, err := e.ensureRemoteFolderTree(ctx, watchRoot)
+		if err != nil || id == "" {
+			return
+		}
+		remoteFolderID = id
+	}
+
+	remoteFiles, err := e.drive.ListFiles(ctx, remoteFolderID)
 	if err != nil {
+		log.Error().Err(err).Str("root", watchRoot).Msg("Failed to list remote files for download")
 		return
 	}
-	e.mu.Lock()
-	for _, f := range remoteFiles {
-		e.remoteCache[f.Name] = f
+
+	for _, rf := range remoteFiles {
+		if ctx.Err() != nil {
+			return
+		}
+		// Skip folders for now (recursive download is a future enhancement)
+		if rf.MimeType == "application/vnd.google-apps.folder" {
+			continue
+		}
+
+		localPath := filepath.Join(watchRoot, rf.Name)
+
+		// Check if local copy is up to date
+		e.mu.RLock()
+		entry := e.files[localPath]
+		e.mu.RUnlock()
+
+		if entry != nil && entry.RemoteMD5 == rf.MD5 && entry.Status == StatusSynced {
+			continue // already in sync
+		}
+
+		// Check local file MD5
+		if localMD5, err := conflicts.MD5File(localPath); err == nil && localMD5 == rf.MD5 {
+			// Local file matches remote, just update state
+			e.mu.Lock()
+			e.files[localPath] = &FileEntry{
+				LocalPath:  localPath,
+				RemoteID:   rf.ID,
+				RemoteName: rf.Name,
+				Status:     StatusSynced,
+				LastSync:   time.Now(),
+				LocalMD5:   localMD5,
+				RemoteMD5:  rf.MD5,
+				Size:       rf.Size,
+			}
+			e.mu.Unlock()
+			e.broadcast()
+			continue
+		}
+
+		// Download the file
+		log.Info().Str("file", rf.Name).Str("dest", localPath).Msg("Downloading from Drive")
+		e.setStatus(localPath, StatusInitializing, "")
+
+		if err := e.drive.DownloadFile(ctx, rf.ID, localPath); err != nil {
+			log.Error().Err(err).Str("file", rf.Name).Msg("Download failed")
+			e.setStatus(localPath, StatusError, err.Error())
+			continue
+		}
+
+		var fileSize int64
+		if fi, err := os.Stat(localPath); err == nil {
+			fileSize = fi.Size()
+		}
+		localMD5, _ := conflicts.MD5File(localPath)
+
+		e.mu.Lock()
+		e.files[localPath] = &FileEntry{
+			LocalPath:  localPath,
+			RemoteID:   rf.ID,
+			RemoteName: rf.Name,
+			Status:     StatusSynced,
+			LastSync:   time.Now(),
+			LocalMD5:   localMD5,
+			RemoteMD5:  rf.MD5,
+			Size:       fileSize,
+		}
+		e.mu.Unlock()
+
+		log.Info().Str("file", rf.Name).Msg("Downloaded successfully")
+		e.broadcast()
 	}
-	e.mu.Unlock()
+
+	// Handle remote deletions (sync local state to match remote)
+	remoteMap := make(map[string]bool)
+	for _, rf := range remoteFiles {
+		remoteMap[rf.Name] = true
+	}
+
+	e.mu.RLock()
+	var localFilesToDelete []string
+	for localPath, entry := range e.files {
+		if filepath.Dir(localPath) == watchRoot {
+			if !remoteMap[entry.RemoteName] && entry.Status == StatusSynced && entry.RemoteID != "" {
+				localFilesToDelete = append(localFilesToDelete, localPath)
+			}
+		}
+	}
+	e.mu.RUnlock()
+
+	for _, localPath := range localFilesToDelete {
+		log.Info().Str("file", localPath).Msg("Deleting local file (removed from Drive)")
+		e.mu.Lock()
+		delete(e.files, localPath)
+		e.mu.Unlock()
+		os.Remove(localPath)
+		e.broadcast()
+	}
 }
 
 func (e *Engine) setStatus(localPath string, status FileStatus, errMsg string) {
@@ -597,8 +739,9 @@ func (e *Engine) Snapshot() StatusSnapshot {
 	defer e.mu.RUnlock()
 
 	snap := StatusSnapshot{
-		IsRunning:   true,
-		LastUpdated: time.Now(),
+		IsRunning:      true,
+		LastUpdated:    time.Now(),
+		WatchPathModes: make(map[string]string),
 	}
 	for _, entry := range e.files {
 		snap.Files = append(snap.Files, entry)
@@ -611,9 +754,28 @@ func (e *Engine) Snapshot() StatusSnapshot {
 
 	e.pathsMu.RLock()
 	snap.WatchPaths = slices.Clone(e.cfg.WatchPaths)
+	for _, wp := range e.cfg.WatchPaths {
+		snap.WatchPathModes[wp] = e.cfg.GetWatchPathMode(wp).String()
+	}
 	e.pathsMu.RUnlock()
 
 	return snap
+}
+
+// modeForPath resolves the sync mode for the watch root that contains the given path.
+func (e *Engine) modeForPath(filePath string) config.SyncMode {
+	e.pathsMu.RLock()
+	defer e.pathsMu.RUnlock()
+	for _, root := range e.cfg.WatchPaths {
+		rel, err := filepath.Rel(root, filePath)
+		if err != nil {
+			continue
+		}
+		if rel == "." || !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return e.cfg.GetWatchPathMode(root)
+		}
+	}
+	return config.ModeTwoWay
 }
 
 func isTempFile(path string) bool {
@@ -650,9 +812,6 @@ func (e *Engine) resolveRemoteParentID(ctx context.Context, localPath string) (s
 			continue
 		}
 		parentDir := filepath.Dir(localPath)
-		if parentDir == watchRoot {
-			return "", nil // Drive root
-		}
 		return e.ensureRemoteFolderTree(ctx, parentDir)
 	}
 	return "", nil
@@ -728,11 +887,17 @@ func (e *Engine) ensureRemoteFolderTree(ctx context.Context, localDir string) (s
 	return parentID, nil
 }
 
-// AddWatchRoot persists a new watch path, registers it with fsnotify, and enqueues an initial index.
+// AddWatchRoot persists a new watch path with the default mode (TwoWay).
 func (e *Engine) AddWatchRoot(ctx context.Context, raw string) error {
+	return e.AddWatchRootWithMode(ctx, raw, config.ModeTwoWay)
+}
+
+// AddWatchRootWithMode persists a new watch path with the given sync mode,
+// registers it with fsnotify, and enqueues an initial index.
+func (e *Engine) AddWatchRootWithMode(ctx context.Context, raw string, mode config.SyncMode) error {
 	e.pathsMu.Lock()
 	before := len(e.cfg.WatchPaths)
-	e.cfg.AddWatchPath(raw)
+	e.cfg.AddWatchPathWithMode(raw, mode)
 	if len(e.cfg.WatchPaths) == before {
 		e.pathsMu.Unlock()
 		return fmt.Errorf("This folder is already in the sync list")
@@ -762,14 +927,42 @@ func (e *Engine) AddWatchRoot(ctx context.Context, raw string) error {
 	}
 	e.pathsMu.Unlock()
 
-	log.Info().Str("path", root).Msg("Folder added to sync (UI)")
+	log.Info().Str("path", root).Str("mode", mode.String()).Msg("Folder added to sync (UI)")
 	go e.indexNewWatchRoot(ctx, root)
+	return nil
+}
+
+// UpdateWatchMode changes the sync mode for an existing watch path.
+// The new mode takes effect immediately for future events.
+func (e *Engine) UpdateWatchMode(path string, mode config.SyncMode) error {
+	e.pathsMu.Lock()
+	defer e.pathsMu.Unlock()
+
+	found := false
+	for _, p := range e.cfg.WatchPaths {
+		if p == path {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("folder is not in the sync list")
+	}
+
+	e.cfg.SetWatchPathMode(path, mode)
+	if err := e.cfg.Save(); err != nil {
+		return err
+	}
+
+	log.Info().Str("path", path).Str("mode", mode.String()).Msg("Sync mode updated")
+	e.broadcast()
 	return nil
 }
 
 // RemoveWatchRoot removes a watch path, stops monitoring it, and deletes remote files.
 func (e *Engine) RemoveWatchRoot(ctx context.Context, path string) error {
 	e.pathsMu.Lock()
+	mode := e.cfg.GetWatchPathMode(path)
 	e.cfg.RemoveWatchPath(path)
 	if err := e.cfg.Save(); err != nil {
 		e.pathsMu.Unlock()
@@ -785,7 +978,7 @@ func (e *Engine) RemoveWatchRoot(ctx context.Context, path string) error {
 	remoteID, hasRemote := e.folderCache[path]
 	e.mu.RUnlock()
 
-	if hasRemote && remoteID != "" {
+	if hasRemote && remoteID != "" && mode.AllowsUpload() {
 		log.Info().Str("path", path).Str("remoteID", remoteID).Msg("Deleting folder from Google Drive")
 		if err := e.drive.DeleteFile(ctx, remoteID); err != nil {
 			log.Error().Err(err).Str("path", path).Msg("Failed to delete folder from Google Drive")
@@ -814,6 +1007,20 @@ func (e *Engine) RemoveWatchRoot(ctx context.Context, path string) error {
 }
 
 func (e *Engine) indexNewWatchRoot(ctx context.Context, watchPath string) {
+	mode := e.modeForPath(watchPath)
+
+	// Always ensure the root folder exists in state so the UI displays it even if empty
+	e.setStatusDir(watchPath, StatusSynced, "")
+
+	// ── DownloadOnly: skip local scan, download remote files instead ──
+	if !mode.AllowsUpload() {
+		log.Info().Str("path", watchPath).Str("mode", mode.String()).Msg("Indexing folder (download only)")
+		if mode.AllowsDownload() {
+			e.downloadRemoteFiles(ctx, watchPath)
+		}
+		return
+	}
+
 	var filePaths []string
 	var dirPaths []string
 
@@ -871,6 +1078,12 @@ func (e *Engine) indexNewWatchRoot(ctx context.Context, watchPath string) {
 			return
 		}
 	}
+
+	// Phase 4: Also download remote files if TwoWay
+	if mode.AllowsDownload() {
+		e.downloadRemoteFiles(ctx, watchPath)
+	}
+
 	log.Info().Int("files_enqueued", count).Str("path", watchPath).Msg("Folder indexing complete")
 	e.broadcast()
 }
