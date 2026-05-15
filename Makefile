@@ -3,34 +3,50 @@
         dev build setup clean check-deps check-libs \
         check-webkit collect-webkit-deps check-appimage
 
-# ── Configuration ─────────────────────────────────────────────
-LINUXDEPLOY ?= $(shell which linuxdeploy-x86_64.AppImage 2>/dev/null || which linuxdeploy 2>/dev/null || echo "$$HOME/tools/linuxdeploy/linuxdeploy-x86_64.AppImage")
+# ── OS Detection ──────────────────────────────────────────────
+ifeq ($(OS),Windows_NT)
+    IS_WINDOWS := 1
+    DAEMON_BIN := ../bin/synca-daemon-x86_64-pc-windows-msvc.exe
+    KILL_DAEMON := taskkill /F /IM "synca-daemon*" 2>nul || exit 0
+else
+    IS_WINDOWS := 0
+    DAEMON_BIN := ../bin/synca-daemon-x86_64-unknown-linux-gnu
+    KILL_DAEMON := pkill -f synca-daemon || true
 
-# Dynamic library resolution (cross-distro)
-HARFBUZZ := $(shell ldconfig -p | grep libharfbuzz.so.0 | head -n1 | awk '{print $$4}')
-FONTCONFIG := $(shell ldconfig -p | grep libfontconfig.so.1 | head -n1 | awk '{print $$4}')
-FREETYPE := $(shell ldconfig -p | grep libfreetype.so.6 | head -n1 | awk '{print $$4}')
-EXPAT := $(shell ldconfig -p | grep libexpat.so.1 | head -n1 | awk '{print $$4}')
+    # Linux-specific configuration
+    LINUXDEPLOY ?= $(shell which linuxdeploy-x86_64.AppImage 2>/dev/null || which linuxdeploy 2>/dev/null || echo "$$HOME/tools/linuxdeploy/linuxdeploy-x86_64.AppImage")
 
-# WebKitGTK detection (para empacotamento portátil)
-WEBKITGTK_SO := $(shell ldconfig -p | grep 'libwebkit2gtk-4.1.so' | head -n1 | awk '{print $$4}')
-WEBKITGTK_LIBEXEC := $(shell for p in /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1 /usr/lib/webkit2gtk-4.1 /usr/lib64/webkit2gtk-4.1 /usr/libexec/webkit2gtk-4.1; do [ -d "$$p" ] && echo "$$p" && break; done)
+    # Dynamic library resolution (cross-distro)
+    HARFBUZZ := $(shell ldconfig -p | grep libharfbuzz.so.0 | head -n1 | awk '{print $$4}')
+    FONTCONFIG := $(shell ldconfig -p | grep libfontconfig.so.1 | head -n1 | awk '{print $$4}')
+    FREETYPE := $(shell ldconfig -p | grep libfreetype.so.6 | head -n1 | awk '{print $$4}')
+    EXPAT := $(shell ldconfig -p | grep libexpat.so.1 | head -n1 | awk '{print $$4}')
+
+    # WebKitGTK detection (para empacotamento portátil)
+    WEBKITGTK_SO := $(shell ldconfig -p | grep 'libwebkit2gtk-4.1.so' | head -n1 | awk '{print $$4}')
+    WEBKITGTK_LIBEXEC := $(shell for p in /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1 /usr/lib/webkit2gtk-4.1 /usr/lib64/webkit2gtk-4.1 /usr/libexec/webkit2gtk-4.1; do [ -d "$$p" ] && echo "$$p" && break; done)
+endif
+
+# Export Go variables for cross-platform compatibility
+export CGO_ENABLED=0
 
 # ── Backend (Go daemon) ────────────────────────────────────────
 daemon:
 	@echo "Building synca daemon..."
-	cp .env daemon/internal/auth/.env.embedded || touch daemon/internal/auth/.env.embedded
-	cd daemon && CGO_ENABLED=0 go build -o ../bin/synca-daemon-x86_64-unknown-linux-gnu ./cmd/synca
-	rm -f daemon/internal/auth/.env.embedded && touch daemon/internal/auth/.env.embedded
+	@node -e "const fs = require('fs'); fs.existsSync('.env') ? fs.copyFileSync('.env', 'daemon/internal/auth/.env.embedded') : fs.writeFileSync('daemon/internal/auth/.env.embedded', '');"
+	cd daemon && go build -o $(DAEMON_BIN) ./cmd/synca
+	@node -e "require('fs').writeFileSync('daemon/internal/auth/.env.embedded', '');"
 
+daemon-windows: export GOOS=windows
+daemon-windows: export GOARCH=amd64
 daemon-windows:
 	@echo "Building synca daemon (Windows)..."
-	cp .env daemon/internal/auth/.env.embedded || touch daemon/internal/auth/.env.embedded
-	cd daemon && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o ../bin/synca-daemon-x86_64-pc-windows-gnu.exe ./cmd/synca
-	rm -f daemon/internal/auth/.env.embedded && touch daemon/internal/auth/.env.embedded
+	@node -e "const fs = require('fs'); fs.existsSync('.env') ? fs.copyFileSync('.env', 'daemon/internal/auth/.env.embedded') : fs.writeFileSync('daemon/internal/auth/.env.embedded', '');"
+	cd daemon && go build -o ../bin/synca-daemon-x86_64-pc-windows-gnu.exe ./cmd/synca
+	@node -e "require('fs').writeFileSync('daemon/internal/auth/.env.embedded', '');"
 
 daemon-run: daemon
-	./bin/synca-daemon-x86_64-unknown-linux-gnu daemon
+	bin/$(notdir $(DAEMON_BIN)) daemon
 
 # ── Frontend ──────────────────────────────────────────────────
 app-dev:
@@ -167,21 +183,19 @@ release-linux: daemon
 
 	@echo "✅ Linux release ready"
 
-release-windows: daemon-windows
-	rm -rf desktop/src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/*
-
-	cd desktop && \
-	CARGO_HOME=$$(pwd)/.cargo-home \
-	CARGO_TARGET_DIR=$$(pwd)/src-tauri/target \
-	npm run tauri build -- --target x86_64-pc-windows-gnu
-
-	mkdir -p releases/windows
-	rm -rf releases/windows/*
-	cp desktop/src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/*.exe releases/windows/ || true
+release-windows: daemon
+	@echo "Cleaning old NSIS bundles..."
+	@node -e "const fs = require('fs'); fs.rmSync('desktop/src-tauri/target/release/bundle/nsis', {recursive:true, force:true});"
+	
+	@echo "Building Tauri app..."
+	cd desktop && npm run tauri build
+	
+	@echo "Copying to releases/windows..."
+	@node -e "const fs = require('fs'), path = require('path'); const d = 'releases/windows'; fs.mkdirSync(d, {recursive:true}); const s = 'desktop/src-tauri/target/release/bundle/nsis'; if(fs.existsSync(s)) { fs.readdirSync(s).filter(f=>f.endsWith('.exe')).forEach(f=>fs.copyFileSync(path.join(s,f), path.join(d,f))) }"
 
 # ── Dev ───────────────────────────────────────────────────────
 dev: daemon
-	-pkill -f synca-daemon || true
+	-$(KILL_DAEMON)
 	cd desktop && npm run tauri dev
 
 # ── Build ─────────────────────────────────────────────────────
@@ -194,12 +208,8 @@ setup: check-deps
 
 # ── Clean ─────────────────────────────────────────────────────
 clean:
-	rm -rf bin/ releases/
-	cd desktop && rm -rf node_modules dist src-tauri/target
+	@node -e "const fs = require('fs'); ['bin', 'releases', 'desktop/node_modules', 'desktop/dist', 'desktop/src-tauri/target'].forEach(p => { if (fs.existsSync(p)) fs.rmSync(p, { recursive: true, force: true }); });"
 
 # ── Dependency Check ───────────────────────────────────────────
 check-deps:
-	@go version >/dev/null 2>&1 || (echo "❌ Go missing"; exit 1)
-	@rustc --version >/dev/null 2>&1 || (echo "❌ Rust missing"; exit 1)
-	@npm --version >/dev/null 2>&1 || (echo "❌ npm missing"; exit 1)
-	@echo "✅ Core dependencies OK"
+	@node -e "const { execSync } = require('child_process'); try { execSync('go version'); execSync('rustc --version'); execSync('npm --version'); console.log('✅ Core dependencies OK'); } catch (e) { console.error('❌ Missing dependency: ' + e.message); process.exit(1); }"
