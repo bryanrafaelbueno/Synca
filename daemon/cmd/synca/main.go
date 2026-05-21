@@ -81,7 +81,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	ws := server.NewWebSocketServer(engine)
+	ws := server.NewWebSocketServer(engine, cancel)
 
 	log.Info().Str("addr", cfg.WSAddr).Msg("Synca daemon started")
 

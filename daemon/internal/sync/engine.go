@@ -125,7 +125,8 @@ type Engine struct {
 	// remote state cache: remoteName → File
 	remoteCache map[string]*drive.File
 	// local directory path → remote folder ID
-	folderCache map[string]string
+	folderCache  map[string]string
+	folderTreeMu sync.Mutex
 
 	// Broadcast channel: UI subscribes to this
 	Updates chan StatusSnapshot
@@ -340,9 +341,18 @@ func (e *Engine) uploadFile(ctx context.Context, localPath string) {
 			remoteID = remoteFile.ID
 		}
 	} else {
-		e.mu.RLock()
-		remoteFile = e.remoteCache[remoteName]
-		e.mu.RUnlock()
+		var err error
+		remoteFile, err = e.drive.GetFileByID(ctx, remoteID)
+		if err != nil {
+			log.Warn().Err(err).Str("remoteID", remoteID).Msg("Failed to get remote file by ID, attempting lookup by name in folder")
+			// Fallback if the file was deleted or invalid ID
+			remoteFile, _ = e.drive.GetFileByNameInFolder(ctx, remoteName, parentID)
+			if remoteFile != nil {
+				remoteID = remoteFile.ID
+			} else {
+				remoteID = "" // reset remoteID so it is recreated
+			}
+		}
 	}
 
 	// If remote file exists and MD5 matches local, skip upload (covers both restart and unchanged cases)
@@ -744,7 +754,10 @@ func (e *Engine) Snapshot() StatusSnapshot {
 		WatchPathModes: make(map[string]string),
 	}
 	for _, entry := range e.files {
-		snap.Files = append(snap.Files, entry)
+		if entry != nil {
+			entryClone := *entry
+			snap.Files = append(snap.Files, &entryClone)
+		}
 		snap.TotalFiles++
 		if entry.Status == StatusSynced {
 			snap.SyncedFiles++
@@ -818,6 +831,17 @@ func (e *Engine) resolveRemoteParentID(ctx context.Context, localPath string) (s
 }
 
 func (e *Engine) ensureRemoteFolderTree(ctx context.Context, localDir string) (string, error) {
+	e.mu.RLock()
+	if id, ok := e.folderCache[localDir]; ok {
+		e.mu.RUnlock()
+		return id, nil
+	}
+	e.mu.RUnlock()
+
+	e.folderTreeMu.Lock()
+	defer e.folderTreeMu.Unlock()
+
+	// Double-check cache under lock
 	e.mu.RLock()
 	if id, ok := e.folderCache[localDir]; ok {
 		e.mu.RUnlock()
@@ -1113,8 +1137,16 @@ func (e *Engine) loadState() {
 // saveState persists the files map to disk for resume on restart.
 func (e *Engine) saveState() {
 	e.mu.RLock()
-	data, err := json.Marshal(e.files)
+	filesClone := make(map[string]*FileEntry, len(e.files))
+	for k, v := range e.files {
+		if v != nil {
+			clone := *v
+			filesClone[k] = &clone
+		}
+	}
 	e.mu.RUnlock()
+
+	data, err := json.Marshal(filesClone)
 	if err != nil {
 		log.Warn().Err(err).Msg("Failed to marshal sync state")
 		return

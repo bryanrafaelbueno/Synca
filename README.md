@@ -148,31 +148,49 @@ make dev
 
 ## ⚙️ Configuration
 
-File:
+File Location:
+- **Linux**: `~/.config/synca/config.json`
+- **Windows**: `%APPDATA%\synca\config.json` (e.g. `C:\Users\Username\AppData\Roaming\synca\config.json`)
 
-```
-~/.config/synca/config.json
-```
-
-Example:
+Example `config.json`:
 
 ```json
 {
-  "watch_paths": ["/home/user/Documents"],
+  "ws_addr": "localhost:7373",
+  "watch_paths": [
+    "/home/user/Documents"
+  ],
+  "watch_path_modes": {
+    "/home/user/Documents": "two_way"
+  },
   "log_level": "info"
 }
 ```
 
 ---
 
+## 🔄 Sync Modes
+
+Synca supports flexible synchronization strategies configured per watched directory:
+
+| Mode | Direction | Description |
+| ---- | --------- | ----------- |
+| **Two-Way** (`two_way`) | `Local ⇄ Drive` | Bidirectional sync. Local and remote changes are kept in full alignment. Conflicts are handled automatically. |
+| **Upload Only** (`upload_only`) | `Local → Drive` | Unidirectional upload. Local events are mirrored to Google Drive. Remote changes are ignored. |
+| **Download Only** (`download_only`) | `Drive → Local` | Unidirectional download. Remote files are synced to local disk. Local changes/deletions are ignored. |
+
+---
+
 ## ⚔️ File Conflicts
+
+When using **Two-Way** sync, conflicts are intelligently detected and resolved based on one of the following strategies:
 
 | Strategy   | Behavior                    |
 | ---------- | --------------------------- |
-| KeepBoth   | Creates copy with timestamp |
-| NewerWins  | Keeps the most recent       |
-| LocalWins  | Keeps the local version     |
-| RemoteWins | Keeps the remote version    |
+| KeepBoth   | Creates duplicate with modified timestamp (default) |
+| NewerWins  | Retains the file with the most recent modification time |
+| LocalWins  | Keeps the local version, overwriting remote |
+| RemoteWins | Keeps the remote version, updating local disk |
 
 ---
 
@@ -203,7 +221,7 @@ synca status
 * [x] Functional interface
 * [x] Conflicts
 * [x] System tray
-* [ ] Full bidirectional sync
+* [x] Full bidirectional sync
 * [ ] Multi-cloud (Rclone)
 
 ---

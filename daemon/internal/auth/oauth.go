@@ -2,7 +2,9 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -99,6 +101,13 @@ func RunOAuthFlow() error {
 		return fmt.Errorf("GOOGLE_CLIENT_ID is missing. Please set it in your .env file at the project root")
 	}
 
+	// Generate a cryptographically secure random state to protect against CSRF attacks
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Errorf("failed to generate secure state: %w", err)
+	}
+	state := hex.EncodeToString(b)
+
 	// Generate PKCE params
 	pkce, err := NewPKCEParams()
 	if err != nil {
@@ -110,8 +119,16 @@ func RunOAuthFlow() error {
 
 	mux := http.NewServeMux()
 	srv := &http.Server{Addr: ":" + localRedirectPort, Handler: mux}
+	defer srv.Shutdown(context.Background())
 
 	mux.HandleFunc("/oauth/callback", func(w http.ResponseWriter, r *http.Request) {
+		cbState := r.URL.Query().Get("state")
+		if cbState != state {
+			errCh <- fmt.Errorf("OAuth state mismatch: potential CSRF")
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+
 		code := r.URL.Query().Get("code")
 		if code == "" {
 			errCh <- fmt.Errorf("no code in OAuth callback")
@@ -133,8 +150,8 @@ func RunOAuthFlow() error {
 		}
 	}()
 
-	// Build auth URL with PKCE challenge
-	authURL := cfg.AuthCodeURL("synca-state", 
+	// Build auth URL with PKCE challenge and random state
+	authURL := cfg.AuthCodeURL(state, 
 		oauth2.AccessTypeOffline, 
 		oauth2.ApprovalForce,
 		oauth2.SetAuthURLParam("code_challenge", pkce.Challenge),
@@ -161,8 +178,6 @@ func RunOAuthFlow() error {
 	if err := saveToken(token); err != nil {
 		return err
 	}
-
-	_ = srv.Shutdown(ctx)
 
 	log.Info().Msg("✓ Authenticated with Google Drive successfully")
 	return nil

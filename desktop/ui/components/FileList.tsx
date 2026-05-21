@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { ask } from '@tauri-apps/plugin-dialog'
 import { useSyncStore, selectFiles, FileEntry, FileStatus, SyncMode } from '../store/syncStore'
 
@@ -309,71 +309,72 @@ export function FileList({ sendCommand }: FileListProps) {
 
   const watchPaths = useSyncStore(state => state.snapshot?.watch_paths ?? []);
 
-  const rootNode: TreeNode = { name: 'root', path: '', localPath: '', isFolder: true, children: {} };
-
-  files.forEach(f => {
-    const isWindows = f.local_path.includes('\\');
-    const sep = isWindows ? '\\' : '/';
-    const parts = f.local_path.split(/[/\\]/).filter(Boolean);
-    let current = rootNode;
-    
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      const isFile = !f.is_dir && (i === parts.length - 1);
-      // Construct a consistent internal tree path using forward slash
-      const nodePath = '/' + parts.slice(0, i + 1).join('/');
-      
-      let localPathPrefix = parts.slice(0, i + 1).join(sep);
-      if (!isWindows) {
-          localPathPrefix = '/' + localPathPrefix;
-      } else if (localPathPrefix.length === 2 && localPathPrefix[1] === ':') {
-          localPathPrefix += '\\';
-      }
-      
-      if (!current.children[part]) {
-        current.children[part] = {
-          name: part,
-          path: nodePath,
-          localPath: localPathPrefix,
-          isFolder: !isFile,
-          children: {}
-        };
-      }
-      
-      if (watchPaths.includes(localPathPrefix)) {
-        current.children[part].isWatchRoot = true;
-      }
-      
-      if (isFile) {
-        current.children[part].file = f;
-        current.children[part].isFolder = false;
-      } else if (f.is_dir && i === parts.length - 1) {
-        current.children[part].file = f;
-      }
-      current = current.children[part];
+  const displayContent = useMemo(() => {
+    if (searchQuery.trim()) {
+      return files.map(f => <FileRow key={f.local_path} entry={f} />);
     }
-  });
 
-  let displayRoots = Object.values(rootNode.children);
-  while (displayRoots.length === 1 && displayRoots[0].isFolder) {
-    const single = displayRoots[0];
-    if (single.isWatchRoot) break;
-    const hasDirectFiles = Object.values(single.children).some(c => !c.isFolder);
-    if (hasDirectFiles) break;
-    displayRoots = Object.values(single.children);
-  }
+    const rootNode: TreeNode = { name: 'root', path: '', localPath: '', isFolder: true, children: {} };
 
-  let displayContent;
-  if (searchQuery.trim()) {
-    displayContent = files.map(f => <FileRow key={f.local_path} entry={f} />);
-  } else {
-    displayContent = displayRoots
+    files.forEach(f => {
+      const isWindows = f.local_path.includes('\\');
+      const sep = isWindows ? '\\' : '/';
+      const parts = f.local_path.split(/[/\\]/).filter(Boolean);
+      let current = rootNode;
+      
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        const isFile = !f.is_dir && (i === parts.length - 1);
+        // Construct a consistent internal tree path using forward slash
+        const nodePath = '/' + parts.slice(0, i + 1).join('/');
+        
+        let localPathPrefix = parts.slice(0, i + 1).join(sep);
+        if (!isWindows) {
+            localPathPrefix = '/' + localPathPrefix;
+        } else if (localPathPrefix.length === 2 && localPathPrefix[1] === ':') {
+            localPathPrefix += '\\';
+        }
+        
+        if (!current.children[part]) {
+          current.children[part] = {
+            name: part,
+            path: nodePath,
+            localPath: localPathPrefix,
+            isFolder: !isFile,
+            children: {}
+          };
+        }
+        
+        if (watchPaths.includes(localPathPrefix)) {
+          current.children[part].isWatchRoot = true;
+        }
+        
+        if (isFile) {
+          current.children[part].file = f;
+          current.children[part].isFolder = false;
+        } else if (f.is_dir && i === parts.length - 1) {
+          current.children[part].file = f;
+        }
+        current = current.children[part];
+      }
+    });
+
+    let displayRoots = Object.values(rootNode.children);
+    while (displayRoots.length === 1 && displayRoots[0].isFolder) {
+      const single = displayRoots[0];
+      if (single.isWatchRoot) break;
+      const hasDirectFiles = Object.values(single.children).some(c => !c.isFolder);
+      if (hasDirectFiles) break;
+      displayRoots = Object.values(single.children);
+    }
+
+    return displayRoots
       .sort((a, b) => {
         if (a.isFolder === b.isFolder) return a.name.localeCompare(b.name);
         return a.isFolder ? -1 : 1;
       })
       .map(node => <TreeNodeView key={node.path} node={node} sendCommand={sendCommand} />);
-  }
+  }, [files, watchPaths, searchQuery, sendCommand]);
 
   return (
     <div className="file-list">

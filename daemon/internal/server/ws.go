@@ -30,17 +30,41 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+// SafeConn wraps a gorilla websocket connection with a mutex to ensure thread-safe writes.
+type SafeConn struct {
+	conn *websocket.Conn
+	mu   sync.Mutex
+}
+
+func (s *SafeConn) WriteMessage(messageType int, data []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.conn.WriteMessage(messageType, data)
+}
+
+func (s *SafeConn) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.conn.Close()
+}
+
+func (s *SafeConn) RemoteAddr() net.Addr {
+	return s.conn.RemoteAddr()
+}
+
 // WebSocketServer streams sync status to connected clients.
 type WebSocketServer struct {
 	engine  *syncengine.Engine
 	mu      sync.Mutex
-	clients map[*websocket.Conn]struct{}
+	clients map[*SafeConn]struct{}
+	cancel  context.CancelFunc
 }
 
-func NewWebSocketServer(engine *syncengine.Engine) *WebSocketServer {
+func NewWebSocketServer(engine *syncengine.Engine, cancel context.CancelFunc) *WebSocketServer {
 	s := &WebSocketServer{
 		engine:  engine,
-		clients: make(map[*websocket.Conn]struct{}),
+		clients: make(map[*SafeConn]struct{}),
+		cancel:  cancel,
 	}
 	go s.broadcastLoop()
 	return s
@@ -66,7 +90,11 @@ func (s *WebSocketServer) Start(addr string) error {
 			_, _ = w.Write([]byte(`{"ok":true}`))
 			go func() {
 				time.Sleep(100 * time.Millisecond)
-				os.Exit(0)
+				if s.cancel != nil {
+					s.cancel()
+				} else {
+					os.Exit(0)
+				}
 			}()
 		}
 	})
@@ -96,42 +124,43 @@ func (s *WebSocketServer) handleWS(w http.ResponseWriter, r *http.Request) {
 		log.Error().Err(err).Msg("WS upgrade failed")
 		return
 	}
-	defer conn.Close()
+	sconn := &SafeConn{conn: conn}
+	defer sconn.Close()
 
 	s.mu.Lock()
-	s.clients[conn] = struct{}{}
+	s.clients[sconn] = struct{}{}
 	s.mu.Unlock()
-	log.Info().Str("remote", conn.RemoteAddr().String()).Msg("WebSocket client connected")
+	log.Info().Str("remote", sconn.RemoteAddr().String()).Msg("WebSocket client connected")
 
 	defer func() {
 		s.mu.Lock()
-		delete(s.clients, conn)
+		delete(s.clients, sconn)
 		s.mu.Unlock()
-		log.Info().Str("remote", conn.RemoteAddr().String()).Msg("WebSocket client disconnected")
+		log.Info().Str("remote", sconn.RemoteAddr().String()).Msg("WebSocket client disconnected")
 	}()
 
 	// initial snapshot
 	snap := s.engine.Snapshot()
 	if data, err := json.Marshal(snap); err == nil {
-		_ = conn.WriteMessage(websocket.TextMessage, data)
+		_ = sconn.WriteMessage(websocket.TextMessage, data)
 		log.Debug().Int("files", len(snap.Files)).Msg("Sent initial snapshot to client")
 	}
 
 	for {
-		_, msg, err := conn.ReadMessage()
+		_, msg, err := sconn.conn.ReadMessage()
 		if err != nil {
 			return
 		}
-		s.handleCommand(conn, msg)
+		s.handleCommand(sconn, msg)
 	}
 }
 
-func (s *WebSocketServer) writeWSError(conn *websocket.Conn, text string) {
+func (s *WebSocketServer) writeWSError(sconn *SafeConn, text string) {
 	payload, _ := json.Marshal(map[string]string{"error": text})
-	_ = conn.WriteMessage(websocket.TextMessage, payload)
+	_ = sconn.WriteMessage(websocket.TextMessage, payload)
 }
 
-func (s *WebSocketServer) handleCommand(conn *websocket.Conn, msg []byte) {
+func (s *WebSocketServer) handleCommand(sconn *SafeConn, msg []byte) {
 	var in struct {
 		Action string `json:"action"`
 		Path   string `json:"path"`
@@ -146,44 +175,44 @@ func (s *WebSocketServer) handleCommand(conn *websocket.Conn, msg []byte) {
 	case "get_status":
 		snap := s.engine.Snapshot()
 		if data, err := json.Marshal(snap); err == nil {
-			_ = conn.WriteMessage(websocket.TextMessage, data)
+			_ = sconn.WriteMessage(websocket.TextMessage, data)
 		}
 	case "add_watch":
 		if strings.TrimSpace(in.Path) == "" {
-			s.writeWSError(conn, "folder path is missing")
+			s.writeWSError(sconn, "folder path is missing")
 			return
 		}
 		mode := config.ParseSyncMode(in.Mode)
 		if err := s.engine.AddWatchRootWithMode(context.Background(), in.Path, mode); err != nil {
-			s.writeWSError(conn, err.Error())
+			s.writeWSError(sconn, err.Error())
 			return
 		}
 		snap := s.engine.Snapshot()
 		if data, err := json.Marshal(snap); err == nil {
-			_ = conn.WriteMessage(websocket.TextMessage, data)
+			_ = sconn.WriteMessage(websocket.TextMessage, data)
 		}
 	case "update_watch":
 		if strings.TrimSpace(in.Path) == "" {
-			s.writeWSError(conn, "folder path is missing")
+			s.writeWSError(sconn, "folder path is missing")
 			return
 		}
 		mode := config.ParseSyncMode(in.Mode)
 		if err := s.engine.UpdateWatchMode(in.Path, mode); err != nil {
-			s.writeWSError(conn, err.Error())
+			s.writeWSError(sconn, err.Error())
 			return
 		}
 		snap := s.engine.Snapshot()
 		if data, err := json.Marshal(snap); err == nil {
-			_ = conn.WriteMessage(websocket.TextMessage, data)
+			_ = sconn.WriteMessage(websocket.TextMessage, data)
 		}
 	case "remove_watch":
 		if in.Path == "" {
-			s.writeWSError(conn, "folder path is missing")
+			s.writeWSError(sconn, "folder path is missing")
 			return
 		}
 		go func() {
 			if err := s.engine.RemoveWatchRoot(context.Background(), in.Path); err != nil {
-				s.writeWSError(conn, err.Error())
+				s.writeWSError(sconn, err.Error())
 			}
 		}()
 	case "restart_daemon":
@@ -192,7 +221,11 @@ func (s *WebSocketServer) handleCommand(conn *websocket.Conn, msg []byte) {
 			time.Sleep(100 * time.Millisecond)
 			log.Info().Msg("Restart requested via WebSocket — re-exec as daemon")
 			if err := restartProcessAsDaemon(); err != nil {
-				log.Warn().Err(err).Msg("re-exec failed, exiting (supervisor may restart)")
+				log.Warn().Err(err).Msg("re-exec failed, exiting gracefully")
+			}
+			if s.cancel != nil {
+				s.cancel()
+			} else {
 				os.Exit(0)
 			}
 		}()
@@ -213,10 +246,10 @@ func (s *WebSocketServer) broadcastLoop() {
 		}
 
 		s.mu.Lock()
-		for conn := range s.clients {
-			if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
-				conn.Close()
-				delete(s.clients, conn)
+		for sconn := range s.clients {
+			if err := sconn.WriteMessage(websocket.TextMessage, data); err != nil {
+				sconn.Close()
+				delete(s.clients, sconn)
 			}
 		}
 		s.mu.Unlock()
@@ -225,7 +258,12 @@ func (s *WebSocketServer) broadcastLoop() {
 
 // PrintStatus connects to the daemon and prints status
 func PrintStatus() error {
-	conn, _, err := websocket.DefaultDialer.Dial("ws://localhost:7373/ws", nil)
+	addr := "localhost:7373"
+	if cfg, err := config.Load(); err == nil {
+		addr = cfg.WSAddr
+	}
+
+	conn, _, err := websocket.DefaultDialer.Dial("ws://"+addr+"/ws", nil)
 	if err != nil {
 		return fmt.Errorf("daemon not running (start with: synca daemon)")
 	}
@@ -256,7 +294,12 @@ func PrintStatus() error {
 
 // IsDaemonRunning checks if daemon is up
 func IsDaemonRunning() bool {
-	conn, err := net.DialTimeout("tcp", "localhost:7373", time.Second)
+	addr := "localhost:7373"
+	if cfg, err := config.Load(); err == nil {
+		addr = cfg.WSAddr
+	}
+
+	conn, err := net.DialTimeout("tcp", addr, time.Second)
 	if err != nil {
 		return false
 	}

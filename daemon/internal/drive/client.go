@@ -86,7 +86,10 @@ func (c *Client) UploadFile(ctx context.Context, localPath, remoteName, parentID
 	}
 	defer f.Close()
 
-	info, _ := f.Stat()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat file: %w", err)
+	}
 
 	log.Info().
 	Str("file", remoteName).
@@ -212,6 +215,19 @@ func (c *Client) GetFileByNameInFolder(ctx context.Context, name, parentID strin
 	}
 	return nil, nil
 }
+
+// GetFileByID retrieves details of a single file in Drive by its ID.
+func (c *Client) GetFileByID(ctx context.Context, fileID string) (*File, error) {
+	f, err := c.svc.Files.Get(fileID).
+		Fields("id,name,mimeType,modifiedTime,size,md5Checksum,parents").
+		Context(ctx).
+		Do()
+	if err != nil {
+		return nil, err
+	}
+	return driveFileToFile(f), nil
+}
+
 
 // internal mapper
 func driveFileToFile(f *gdrive.File) *File {

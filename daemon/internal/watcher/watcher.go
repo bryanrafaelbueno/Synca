@@ -125,6 +125,18 @@ func (w *Watcher) loop() {
 					_ = w.Add(event.Name)
 				}
 			}
+			if event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename) {
+				w.mu.Lock()
+				// If a watched folder (or its parent) was removed/renamed, clean up the watched list
+				for p := range w.watched {
+					if p == event.Name || strings.HasPrefix(p, event.Name+string(os.PathSeparator)) {
+						_ = w.fsw.Remove(p)
+						delete(w.watched, p)
+						log.Debug().Str("path", p).Msg("Removed directory from watch list (deleted/renamed)")
+					}
+				}
+				w.mu.Unlock()
+			}
 			w.debounce(event)
 
 		case err, ok := <-w.fsw.Errors:
