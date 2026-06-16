@@ -281,7 +281,8 @@ MIT © Synca Contributors
 ## ☕ Support the project
 If this project helps you, consider supporting development: </br>
 <a href="https://www.buymeacoffee.com/bryanrafaelbueno" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" alt="Buy Me A Coffee" style="height: 41px !important;width: 174px !important;box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;-webkit-box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;" ></a> </br>
-
+Corrected the spelling of 'Build Tools' and added a new section with a logo for 'Feito no Brasil'.
+---
 <p align="center">
 <a href="https://feitonobrasil.dev.br" aria-label="Feito no Brasil">
   <img src="https://selo.feitonobrasil.dev.br/pt-br/branco-colorido/1x.svg" alt="Feito no Brasil" width="250" height="120" loading="lazy" />
