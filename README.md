@@ -253,7 +253,7 @@ sudo apt update
 sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
 ```
 
-### 3. Build Tools
+### 3. Build Toolslazy
 - **Linux**: `make`, `gcc`, `pkg-config`.
 - **Windows**: Use **Git Bash** (recommended) or install `make` via [Chocolatey](https://chocolatey.org/) (`choco install make`).
 
@@ -282,4 +282,9 @@ MIT © Synca Contributors
 If this project helps you, consider supporting development: </br>
 <a href="https://www.buymeacoffee.com/bryanrafaelbueno" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" alt="Buy Me A Coffee" style="height: 41px !important;width: 174px !important;box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;-webkit-box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;" ></a> </br>
 
-<h2 align="center">🇧🇷 Made in Brazil 🇧🇷</h2>
+<p align="center">
+<a href="https://feitonobrasil.dev.br" aria-label="Feito no Brasil">
+  <img src="https://selo.feitonobrasil.dev.br/pt-br/branco-colorido/1x.svg" alt="Feito no Brasil" width="250" height="120" loading="lazy" />
+</a>
+
+</p>
