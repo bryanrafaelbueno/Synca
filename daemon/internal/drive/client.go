@@ -12,6 +12,7 @@ import (
 	gdrive "google.golang.org/api/drive/v3"
 
 	"github.com/synca/daemon/internal/auth"
+	"github.com/synca/daemon/internal/config"
 )
 
 // File represents a Drive file with metadata we care about.
@@ -31,8 +32,8 @@ type Client struct {
 }
 
 // Uses the centralized auth module (no duplication, no bugs)
-func NewClient(ctx context.Context) (*Client, error) {
-	svc, err := auth.NewDriveService(ctx)
+func NewClient(ctx context.Context, proxy config.ProxySettings) (*Client, error) {
+	svc, err := auth.NewDriveService(ctx, proxy)
 	if err != nil {
 		return nil, err
 	}
@@ -52,9 +53,9 @@ func (c *Client) ListFiles(ctx context.Context, folderID string) ([]*File, error
 
 	for {
 		call := c.svc.Files.List().
-		Q(query).
-		Fields("nextPageToken, files(id,name,mimeType,modifiedTime,size,md5Checksum,parents)").
-		Context(ctx)
+			Q(query).
+			Fields("nextPageToken, files(id,name,mimeType,modifiedTime,size,md5Checksum,parents)").
+			Context(ctx)
 
 		if pageToken != "" {
 			call = call.PageToken(pageToken)
@@ -92,9 +93,9 @@ func (c *Client) UploadFile(ctx context.Context, localPath, remoteName, parentID
 	}
 
 	log.Info().
-	Str("file", remoteName).
-	Int64("size", info.Size()).
-	Msg("Uploading to Drive")
+		Str("file", remoteName).
+		Int64("size", info.Size()).
+		Msg("Uploading to Drive")
 
 	meta := &gdrive.File{Name: remoteName}
 	if parentID != "" {
@@ -105,16 +106,16 @@ func (c *Client) UploadFile(ctx context.Context, localPath, remoteName, parentID
 
 	if remoteID == "" {
 		result, err = c.svc.Files.Create(meta).
-		Media(f).
-		Fields("id,name,mimeType,modifiedTime,size,md5Checksum,parents").
-		Context(ctx).
-		Do()
+			Media(f).
+			Fields("id,name,mimeType,modifiedTime,size,md5Checksum,parents").
+			Context(ctx).
+			Do()
 	} else {
 		result, err = c.svc.Files.Update(remoteID, &gdrive.File{}).
-		Media(f).
-		Fields("id,name,mimeType,modifiedTime,size,md5Checksum,parents").
-		Context(ctx).
-		Do()
+			Media(f).
+			Fields("id,name,mimeType,modifiedTime,size,md5Checksum,parents").
+			Context(ctx).
+			Do()
 	}
 
 	if err != nil {
@@ -164,10 +165,10 @@ func (c *Client) GetOrCreateFolder(ctx context.Context, name, parentID string) (
 	)
 
 	result, err := c.svc.Files.List().
-	Q(query).
-	Fields("files(id)").
-	Context(ctx).
-	Do()
+		Q(query).
+		Fields("files(id)").
+		Context(ctx).
+		Do()
 
 	if err != nil {
 		return "", err
@@ -184,9 +185,9 @@ func (c *Client) GetOrCreateFolder(ctx context.Context, name, parentID string) (
 	}
 
 	created, err := c.svc.Files.Create(folder).
-	Fields("id").
-	Context(ctx).
-	Do()
+		Fields("id").
+		Context(ctx).
+		Do()
 
 	if err != nil {
 		return "", err
@@ -228,6 +229,10 @@ func (c *Client) GetFileByID(ctx context.Context, fileID string) (*File, error) 
 	return driveFileToFile(f), nil
 }
 
+// GetAbout retrieves user profile and storage quota from Google Drive.
+func (c *Client) GetAbout(ctx context.Context) (*gdrive.About, error) {
+	return c.svc.About.Get().Fields("user(displayName,emailAddress,photoLink),storageQuota(limit,usage)").Context(ctx).Do()
+}
 
 // internal mapper
 func driveFileToFile(f *gdrive.File) *File {

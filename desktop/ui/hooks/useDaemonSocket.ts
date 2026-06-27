@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { useSyncStore, type StatusSnapshot } from '../store/syncStore'
+import { useSettingsStore, type ProxyMode, type ProxySettings } from '../store/settingsStore'
 
 const WS_URL = 'ws://localhost:7373/ws'
 const RECONNECT_DELAY_MS = 1500
@@ -9,8 +10,10 @@ export function useDaemonSocket() {
   const ws = useRef<WebSocket | null>(null)
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>()
   const attempts = useRef(0)
+  const pendingProxySync = useRef<string | null>(null)
 
   const { setSnapshot, setConnected, setError, setLastWsError } = useSyncStore()
+  const { setIgnoredFolderPatterns, setProxy } = useSettingsStore()
 
   const connect = useCallback(() => {
     if (ws.current?.readyState === WebSocket.OPEN) return
@@ -41,6 +44,22 @@ export function useDaemonSocket() {
             return
           }
           data.files = files ?? []
+          if (Array.isArray(data.ignored_folders)) {
+            setIgnoredFolderPatterns(data.ignored_folders.filter((value): value is string => typeof value === 'string'))
+          }
+          if (isProxySettings(data.proxy)) {
+            const currentProxy = useSettingsStore.getState().proxy
+            if (data.proxy.mode === 'none' && currentProxy.mode !== 'none') {
+              const syncKey = JSON.stringify(currentProxy)
+              if (pendingProxySync.current !== syncKey && socket.readyState === WebSocket.OPEN) {
+                pendingProxySync.current = syncKey
+                socket.send(JSON.stringify({ action: 'set_proxy', proxy: currentProxy }))
+              }
+            } else {
+              pendingProxySync.current = null
+              setProxy(data.proxy)
+            }
+          }
           setSnapshot(data as unknown as StatusSnapshot)
         } catch (e) {
           console.error('Failed to parse daemon message:', e)
@@ -65,7 +84,7 @@ export function useDaemonSocket() {
     } catch (e) {
       setError('Failed to connect to daemon')
     }
-  }, [setSnapshot, setConnected, setError, setLastWsError])
+  }, [setSnapshot, setConnected, setError, setLastWsError, setIgnoredFolderPatterns, setProxy])
 
   useEffect(() => {
     connect()
@@ -85,4 +104,14 @@ export function useDaemonSocket() {
   }, [])
 
   return { sendCommand }
+}
+
+function isProxySettings(value: unknown): value is ProxySettings {
+  if (!value || typeof value !== 'object') return false
+  const proxy = value as Record<string, unknown>
+  return isProxyMode(proxy.mode)
+}
+
+function isProxyMode(value: unknown): value is ProxyMode {
+  return value === 'none' || value === 'system' || value === 'manual'
 }

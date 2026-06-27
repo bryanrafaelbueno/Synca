@@ -3,7 +3,10 @@ package sync
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -101,14 +104,17 @@ type FileEntry struct {
 
 // StatusSnapshot is what the UI reads.
 type StatusSnapshot struct {
-	Files          []*FileEntry      `json:"files"`
-	WatchPaths     []string          `json:"watch_paths"`
-	WatchPathModes map[string]string `json:"watch_path_modes"`
-	TotalBytes     int64             `json:"total_bytes"`
-	TotalFiles     int               `json:"total_files"`
-	SyncedFiles    int               `json:"synced_files"`
-	IsRunning      bool              `json:"is_running"`
-	LastUpdated    time.Time         `json:"last_updated"`
+	Files          []*FileEntry         `json:"files"`
+	WatchPaths     []string             `json:"watch_paths"`
+	WatchPathModes map[string]string    `json:"watch_path_modes"`
+	IgnoredFolders []string             `json:"ignored_folders"`
+	Proxy          config.ProxySettings `json:"proxy"`
+	NetworkError   string               `json:"network_error,omitempty"`
+	TotalBytes     int64                `json:"total_bytes"`
+	TotalFiles     int                  `json:"total_files"`
+	SyncedFiles    int                  `json:"synced_files"`
+	IsRunning      bool                 `json:"is_running"`
+	LastUpdated    time.Time            `json:"last_updated"`
 }
 
 // Engine is the core sync orchestrator.
@@ -122,6 +128,8 @@ type Engine struct {
 
 	mu    sync.RWMutex
 	files map[string]*FileEntry // keyed by localPath
+	// latest network/proxy error from Drive operations, surfaced to the UI.
+	networkError string
 	// remote state cache: remoteName → File
 	remoteCache map[string]*drive.File
 	// local directory path → remote folder ID
@@ -184,9 +192,46 @@ func NewEngine(cfg *config.Config) (*Engine, error) {
 	return e, nil
 }
 
+func (e *Engine) DriveClient() *drive.Client {
+	return e.drive
+}
+
+func (e *Engine) RecordNetworkError(err error) {
+	if err == nil || !e.proxyEnabled() || !isNetworkProxyError(err) {
+		return
+	}
+	e.mu.Lock()
+	msg := "Proxy/network error: " + err.Error()
+	if e.networkError != msg {
+		e.networkError = msg
+		e.mu.Unlock()
+		e.broadcast()
+		return
+	}
+	e.mu.Unlock()
+}
+
+func (e *Engine) ClearNetworkError() {
+	e.mu.Lock()
+	if e.networkError == "" {
+		e.mu.Unlock()
+		return
+	}
+	e.networkError = ""
+	e.mu.Unlock()
+	e.broadcast()
+}
+
+func (e *Engine) proxyEnabled() bool {
+	e.pathsMu.RLock()
+	mode := e.cfg.Proxy.Mode
+	e.pathsMu.RUnlock()
+	return mode == config.ProxyModeSystem || mode == config.ProxyModeManual
+}
+
 func (e *Engine) Run(ctx context.Context) error {
 	// Init Drive client
-	driveClient, err := drive.NewClient(ctx)
+	driveClient, err := drive.NewClient(ctx, e.cfg.Proxy)
 	if err != nil {
 		return err
 	}
@@ -256,6 +301,10 @@ func (e *Engine) worker(ctx context.Context) {
 
 func (e *Engine) handleEvent(ctx context.Context, event watcher.FileEvent) {
 	path := event.Path
+	if e.isIgnoredPath(path) {
+		e.forgetLocalPath(path)
+		return
+	}
 
 	// ── Mode gate: skip local events if mode does not process them ──
 	mode := e.modeForPath(path)
@@ -268,6 +317,7 @@ func (e *Engine) handleEvent(ctx context.Context, event watcher.FileEvent) {
 		if event.Kind == watcher.EventCreate && mode.AllowsUpload() {
 			e.setStatusDir(path, StatusInitializing, "")
 			if _, err := e.ensureRemoteFolderTree(ctx, path); err != nil {
+				e.RecordNetworkError(err)
 				log.Error().Err(err).Str("path", path).Msg("Failed to sync folder")
 				errMsg := err.Error()
 				if strings.Contains(errMsg, "403") || strings.Contains(errMsg, "400") {
@@ -321,6 +371,7 @@ func (e *Engine) uploadFile(ctx context.Context, localPath string) {
 	remoteName := filepath.Base(localPath)
 	parentID, err := e.resolveRemoteParentID(ctx, localPath)
 	if err != nil {
+		e.RecordNetworkError(err)
 		e.setStatus(localPath, StatusError, err.Error())
 		return
 	}
@@ -408,10 +459,12 @@ func (e *Engine) uploadFile(ctx context.Context, localPath string) {
 	e.setStatus(localPath, StatusUploading, "")
 	result, err := e.drive.UploadFile(ctx, localPath, remoteName, parentID, remoteID)
 	if err != nil {
+		e.RecordNetworkError(err)
 		log.Error().Err(err).Str("file", localPath).Msg("Upload failed")
 		e.setStatus(localPath, StatusError, err.Error())
 		return
 	}
+	e.ClearNetworkError()
 
 	e.setStatus(localPath, StatusVerifying, "")
 	// (MD5 verification is done via drive.UploadFile return values)
@@ -444,9 +497,11 @@ func (e *Engine) removeRemoteFile(ctx context.Context, localPath string) {
 	}
 
 	if err := e.drive.DeleteFile(ctx, entry.RemoteID); err != nil {
+		e.RecordNetworkError(err)
 		log.Error().Err(err).Str("file", localPath).Msg("Remote delete failed")
 		return
 	}
+	e.ClearNetworkError()
 
 	e.mu.Lock()
 	delete(e.files, localPath)
@@ -460,9 +515,11 @@ func (e *Engine) fullSync(ctx context.Context) {
 	log.Info().Msg("Starting full sync...")
 	remoteFiles, err := e.drive.ListFiles(ctx, "")
 	if err != nil {
+		e.RecordNetworkError(err)
 		log.Error().Err(err).Msg("Full sync: failed to list Drive files")
 		return
 	}
+	e.ClearNetworkError()
 
 	e.mu.Lock()
 	for _, f := range remoteFiles {
@@ -490,10 +547,17 @@ func (e *Engine) fullSync(ctx context.Context) {
 				if err != nil {
 					return nil
 				}
+				if path != watchPath && e.isIgnoredPath(path) {
+					if d.IsDir() {
+						return filepath.SkipDir
+					}
+					return nil
+				}
 				if d.IsDir() {
 					if path != watchPath {
 						e.setStatusDir(path, StatusInitializing, "")
 						if _, err := e.ensureRemoteFolderTree(ctx, path); err != nil {
+							e.RecordNetworkError(err)
 							log.Error().Err(err).Str("path", path).Msg("Failed to sync folder during full sync")
 							errMsg := err.Error()
 							if strings.Contains(errMsg, "403") || strings.Contains(errMsg, "400") {
@@ -562,6 +626,7 @@ func (e *Engine) downloadRemoteFiles(ctx context.Context, watchRoot string) {
 	if !hasCached {
 		id, err := e.ensureRemoteFolderTree(ctx, watchRoot)
 		if err != nil || id == "" {
+			e.RecordNetworkError(err)
 			return
 		}
 		remoteFolderID = id
@@ -569,9 +634,11 @@ func (e *Engine) downloadRemoteFiles(ctx context.Context, watchRoot string) {
 
 	remoteFiles, err := e.drive.ListFiles(ctx, remoteFolderID)
 	if err != nil {
+		e.RecordNetworkError(err)
 		log.Error().Err(err).Str("root", watchRoot).Msg("Failed to list remote files for download")
 		return
 	}
+	e.ClearNetworkError()
 
 	for _, rf := range remoteFiles {
 		if ctx.Err() != nil {
@@ -583,6 +650,10 @@ func (e *Engine) downloadRemoteFiles(ctx context.Context, watchRoot string) {
 		}
 
 		localPath := filepath.Join(watchRoot, rf.Name)
+		if e.isIgnoredPath(localPath) {
+			e.forgetLocalPath(localPath)
+			continue
+		}
 
 		// Check if local copy is up to date
 		e.mu.RLock()
@@ -617,10 +688,12 @@ func (e *Engine) downloadRemoteFiles(ctx context.Context, watchRoot string) {
 		e.setStatus(localPath, StatusInitializing, "")
 
 		if err := e.drive.DownloadFile(ctx, rf.ID, localPath); err != nil {
+			e.RecordNetworkError(err)
 			log.Error().Err(err).Str("file", rf.Name).Msg("Download failed")
 			e.setStatus(localPath, StatusError, err.Error())
 			continue
 		}
+		e.ClearNetworkError()
 
 		var fileSize int64
 		if fi, err := os.Stat(localPath); err == nil {
@@ -752,6 +825,7 @@ func (e *Engine) Snapshot() StatusSnapshot {
 		IsRunning:      true,
 		LastUpdated:    time.Now(),
 		WatchPathModes: make(map[string]string),
+		NetworkError:   e.networkError,
 	}
 	for _, entry := range e.files {
 		if entry != nil {
@@ -767,6 +841,8 @@ func (e *Engine) Snapshot() StatusSnapshot {
 
 	e.pathsMu.RLock()
 	snap.WatchPaths = slices.Clone(e.cfg.WatchPaths)
+	snap.IgnoredFolders = slices.Clone(e.cfg.IgnoredFolders)
+	snap.Proxy = e.cfg.Proxy
 	for _, wp := range e.cfg.WatchPaths {
 		snap.WatchPathModes[wp] = e.cfg.GetWatchPathMode(wp).String()
 	}
@@ -810,6 +886,108 @@ func isTempFile(path string) bool {
 		return true
 	}
 	return false
+}
+
+func isNetworkProxyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	networkMarkers := []string{
+		"proxyconnect",
+		"proxy",
+		"connection refused",
+		"connection reset",
+		"connection timed out",
+		"no such host",
+		"temporary failure in name resolution",
+		"tls handshake timeout",
+		"i/o timeout",
+		"deadline exceeded",
+	}
+	for _, marker := range networkMarkers {
+		if strings.Contains(msg, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *Engine) isIgnoredPath(localPath string) bool {
+	e.pathsMu.RLock()
+	roots := slices.Clone(e.cfg.WatchPaths)
+	ignored := slices.Clone(e.cfg.IgnoredFolders)
+	e.pathsMu.RUnlock()
+
+	if len(ignored) == 0 {
+		return false
+	}
+
+	for _, root := range roots {
+		rel, err := filepath.Rel(root, localPath)
+		if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		rel = filepath.Clean(rel)
+		parts := strings.Split(rel, string(filepath.Separator))
+		for _, pattern := range ignored {
+			pattern = filepath.Clean(strings.TrimSpace(pattern))
+			if pattern == "" || pattern == "." {
+				continue
+			}
+			if len(parts) > 0 && parts[0] == pattern {
+				return true
+			}
+			for _, part := range parts {
+				if part == pattern {
+					return true
+				}
+			}
+			if rel == pattern || strings.HasPrefix(rel, pattern+string(filepath.Separator)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (e *Engine) forgetLocalPath(localPath string) {
+	e.mu.Lock()
+	changed := false
+	for path := range e.files {
+		if path == localPath || strings.HasPrefix(path, localPath+string(filepath.Separator)) {
+			delete(e.files, path)
+			changed = true
+		}
+	}
+	e.mu.Unlock()
+	if changed {
+		e.broadcast()
+	}
+}
+
+func (e *Engine) pruneIgnoredState() {
+	e.mu.Lock()
+	changed := false
+	for path := range e.files {
+		if e.isIgnoredPath(path) {
+			delete(e.files, path)
+			changed = true
+		}
+	}
+	e.mu.Unlock()
+	if changed {
+		e.saveState()
+		e.broadcast()
+	}
 }
 
 func (e *Engine) resolveRemoteParentID(ctx context.Context, localPath string) (string, error) {
@@ -1030,6 +1208,59 @@ func (e *Engine) RemoveWatchRoot(ctx context.Context, path string) error {
 	return nil
 }
 
+func (e *Engine) SetIgnoredFolders(patterns []string) error {
+	e.pathsMu.Lock()
+	e.cfg.SetIgnoredFolders(patterns)
+	err := e.cfg.Save()
+	e.pathsMu.Unlock()
+	if err != nil {
+		return err
+	}
+	e.pruneIgnoredState()
+	e.broadcast()
+	return nil
+}
+
+func (e *Engine) SetProxySettings(ctx context.Context, proxy config.ProxySettings) error {
+	proxy = config.NormalizeProxySettings(proxy)
+	if err := config.ValidateProxySettings(proxy); err != nil {
+		return err
+	}
+
+	driveClient, err := drive.NewClient(ctx, proxy)
+	if err != nil {
+		return err
+	}
+
+	e.pathsMu.Lock()
+	if err := e.cfg.SetProxySettings(proxy); err != nil {
+		e.pathsMu.Unlock()
+		return err
+	}
+	if err := e.cfg.Save(); err != nil {
+		e.pathsMu.Unlock()
+		return err
+	}
+	e.pathsMu.Unlock()
+
+	e.drive = driveClient
+	e.ClearNetworkError()
+	e.broadcast()
+	if proxy.Mode == config.ProxyModeSystem || proxy.Mode == config.ProxyModeManual {
+		go func() {
+			testCtx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+			defer cancel()
+			if _, err := driveClient.GetAbout(testCtx); err != nil {
+				e.RecordNetworkError(err)
+				return
+			}
+			e.ClearNetworkError()
+		}()
+	}
+	log.Info().Str("mode", string(proxy.Mode)).Msg("Proxy settings updated")
+	return nil
+}
+
 func (e *Engine) indexNewWatchRoot(ctx context.Context, watchPath string) {
 	mode := e.modeForPath(watchPath)
 
@@ -1054,6 +1285,12 @@ func (e *Engine) indexNewWatchRoot(ctx context.Context, watchPath string) {
 			return ctx.Err()
 		}
 		if err != nil {
+			return nil
+		}
+		if path != watchPath && e.isIgnoredPath(path) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if isTempFile(path) {

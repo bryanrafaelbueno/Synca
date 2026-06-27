@@ -182,6 +182,21 @@ body {
   color: var(--text1);
 }
 
+.sidebar-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  color: #e74c3c;
+  font-size: 11px;
+  margin-top: 6px;
+  line-height: 1.3;
+}
+
+.inline-warning-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
 .last-sync {
   font-size: 13px;
   color: var(--text1);
@@ -190,6 +205,9 @@ body {
 }
 
 .sidebar-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   padding: 0 12px;
   margin-top: auto;
 }
@@ -213,6 +231,12 @@ body {
 .btn-action:hover {
   background: var(--bg2);
   color: var(--text0);
+}
+
+.btn-action.active {
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 .btn-action:active {
@@ -441,6 +465,13 @@ input:checked+.slider:before {
   color: #A32D2D;
   background: #FCEBEB;
   border-bottom: 0.5px solid var(--border);
+}
+
+.proxy-error-banner span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -743,8 +774,12 @@ input:checked+.slider:before {
 }
 
 .empty-icon {
-  font-size: 32px;
+  color: var(--text2);
   line-height: 1;
+}
+
+.empty-state-svg {
+  display: block;
 }
 
 .empty-title {
@@ -802,6 +837,24 @@ input:checked+.slider:before {
 .status-addr {
   margin-left: auto;
   font-family: monospace;
+}
+
+.status-proxy-error {
+  max-width: min(420px, 40vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #A32D2D;
+  background: #FCEBEB;
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .status-proxy-error {
+    color: #F7C1C1;
+    background: #4a1a1a;
+  }
 }
 
 /* ── Connect screen ───────────────────────────────────────────── */
@@ -1140,4 +1193,588 @@ input:checked+.slider:before {
 
 .btn-modal-confirm:hover {
   opacity: 0.9;
+}
+/* ── Sidebar nav button (gear) ─────────────────────────────────── */
+.sidebar-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: none;
+  border: 0.5px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text2);
+  cursor: pointer;
+  transition: color .15s, background .15s, border-color .15s;
+}
+
+.sidebar-nav-btn:hover {
+  color: var(--text0);
+  background: var(--bg2);
+  border-color: var(--border-md);
+}
+
+.sidebar-nav-btn.active {
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* ── Settings Page Layout ─────────────────────────────────────── */
+.cfg-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg0);
+}
+
+.cfg-header {
+  padding: 18px 24px 14px;
+  border-bottom: 0.5px solid var(--border);
+  flex-shrink: 0;
+}
+
+.cfg-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text0);
+}
+
+.cfg-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 24px 32px;
+}
+
+.cfg-section {
+  margin-top: 24px;
+}
+
+.cfg-section-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 10px;
+}
+
+.cfg-section-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--text2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.cfg-section-icon svg {
+  display: block;
+}
+
+.cfg-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--text2);
+}
+
+.cfg-card {
+  background: var(--bg1);
+  border: 0.5px solid var(--border-md);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ── Account ───────────────────────────────────────────────────── */
+.cfg-account {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.cfg-account-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text2);
+  font-size: 13px;
+}
+
+.cfg-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border-md);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  flex-shrink: 0;
+}
+
+.cfg-account-avatar-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.cfg-account-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+  border: 2px solid var(--border-md);
+}
+
+.cfg-account-avatar-fallback {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: 22px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.cfg-account-avatar-badge {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #4285F4;
+  border: 1.5px solid var(--bg1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cfg-account-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.cfg-account-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cfg-account-email {
+  font-size: 12px;
+  color: var(--text2);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cfg-storage-bar-wrap {
+  margin-top: 10px;
+}
+
+.cfg-storage-bar-bg {
+  height: 5px;
+  background: var(--bg2);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.cfg-storage-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.cfg-storage-text {
+  font-size: 11px;
+  color: var(--text2);
+  display: flex;
+  align-items: flex-start;
+  gap: 3px;
+  flex-direction: column;
+  flex-wrap: wrap;
+}
+
+.cfg-storage-sep {
+  opacity: 0.5;
+}
+
+.cfg-account-footer {
+  border-top: 0.5px solid var(--border);
+  padding-top: 12px;
+}
+
+.cfg-btn-signout {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: none;
+  border: 0.5px solid var(--border-md);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text1);
+  cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
+}
+
+.cfg-btn-signout:hover {
+  background: #FCEBEB;
+  color: #A32D2D;
+  border-color: #F7C1C1;
+}
+
+@media (prefers-color-scheme: dark) {
+  .cfg-btn-signout:hover {
+    background: #4a1a1a;
+    color: #F7C1C1;
+    border-color: #791F1F;
+  }
+}
+
+/* ── Language ──────────────────────────────────────────────────── */
+.cfg-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cfg-row-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.cfg-row-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text0);
+}
+
+.cfg-row-desc {
+  font-size: 11px;
+  color: var(--text2);
+  margin-top: 2px;
+}
+
+.cfg-lang-pills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cfg-lang-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: var(--bg2);
+  border: 0.5px solid var(--border-md);
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text1);
+  cursor: pointer;
+  transition: all .15s;
+}
+
+.cfg-lang-pill:hover {
+  color: var(--text0);
+  border-color: var(--accent);
+}
+
+.cfg-lang-pill.active {
+  background: var(--accent-bg);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.cfg-proxy-mode-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.cfg-proxy-mode-icon svg {
+  display: block;
+}
+
+/* ── Proxy ─────────────────────────────────────────────────────── */
+.cfg-proxy-modes {
+  display: flex;
+  gap: 6px;
+  background: var(--bg2);
+  padding: 4px;
+  border-radius: var(--radius-md);
+  border: 0.5px solid var(--border-md);
+}
+
+.cfg-proxy-mode-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text1);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.cfg-proxy-mode-btn:hover { color: var(--text0); }
+
+.cfg-proxy-mode-btn.active {
+  background: var(--bg0);
+  color: var(--text0);
+  box-shadow: 0 1px 3px rgba(0,0,0,.1);
+}
+
+.cfg-proxy-types {
+  width: 100%;
+}
+
+.cfg-proxy-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+  animation: slideDown 0.15s ease-out;
+}
+
+/* ── Inputs ────────────────────────────────────────────────────── */
+.cfg-input-group { display: flex; gap: 8px; }
+.cfg-input-group-column { flex-direction: column; }
+.cfg-input-group-row { flex-direction: row; }
+.cfg-input-item { display: flex; flex-direction: column; gap: 4px; }
+.cfg-input-grow { flex: 1; }
+
+.cfg-input-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.cfg-input {
+  padding: 7px 10px;
+  background: var(--bg0);
+  border: 0.5px solid var(--border-md);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--text0);
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+  width: 100%;
+}
+
+.cfg-input::placeholder { color: var(--text2); }
+
+.cfg-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* ── Buttons ───────────────────────────────────────────────────── */
+.cfg-btn-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-weight: 500;
+  color: #fff;
+  cursor: pointer;
+  transition: opacity .15s;
+  align-self: flex-start;
+}
+
+.cfg-btn-save:hover { opacity: .88; }
+
+/* ── Ignored Folders ───────────────────────────────────────────── */
+.cfg-desc {
+  font-size: 12px;
+  color: var(--text2);
+  line-height: 1.5;
+}
+
+.cfg-ignored-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 28px;
+}
+
+.cfg-ignored-empty {
+  font-size: 12px;
+  color: var(--text2);
+  font-style: italic;
+}
+
+.cfg-ignored-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 9px;
+  background: var(--bg2);
+  border: 0.5px solid var(--border-md);
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text1);
+  animation: fadeIn .15s;
+}
+
+.cfg-ignored-name {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+}
+
+.cfg-ignored-remove {
+  background: none;
+  border: none;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--text2);
+  cursor: pointer;
+  padding: 0 1px;
+  border-radius: 3px;
+  transition: color .12s;
+}
+
+.cfg-ignored-remove:hover { color: #A32D2D; }
+
+@media (prefers-color-scheme: dark) {
+  .cfg-ignored-remove:hover { color: #F7C1C1; }
+}
+
+.cfg-ignored-add-row {
+  display: flex;
+  gap: 8px;
+}
+
+.cfg-btn-add {
+  padding: 7px 14px;
+  background: var(--accent-bg);
+  border: 0.5px solid color-mix(in srgb, var(--accent) 35%, var(--border-md));
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+  transition: background .12s;
+  white-space: nowrap;
+}
+
+.cfg-btn-add:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg1));
+}
+
+.cfg-btn-add:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ── About ──────────────────────────────────────────────────────── */
+.cfg-about-rows { display: flex; flex-direction: column; gap: 10px; }
+
+.cfg-about-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.cfg-about-key { font-size: 12px; color: var(--text2); }
+.cfg-about-val { font-size: 12px; color: var(--text1); font-weight: 500; }
+
+.cfg-about-link { font-size: 12px; color: var(--accent); text-decoration: none; }
+.cfg-about-link:hover { text-decoration: underline; }
+
+/* ── Danger Zone ────────────────────────────────────────────────── */
+.cfg-card-danger {
+  border-color: color-mix(in srgb, #e74c3c 30%, var(--border-md));
+  background: color-mix(in srgb, #e74c3c 4%, var(--bg1));
+}
+
+@media (prefers-color-scheme: dark) {
+  .cfg-card-danger {
+    border-color: color-mix(in srgb, #e74c3c 25%, var(--border-md));
+    background: color-mix(in srgb, #e74c3c 6%, var(--bg1));
+  }
+}
+
+.cfg-danger-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.cfg-btn-danger {
+  padding: 7px 14px;
+  background: #e74c3c;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+  transition: opacity .15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.cfg-btn-danger:hover { opacity: .85; }
+
+/* ── Branding Footer ────────────────────────────────────────────── */
+.cfg-branding {
+  display: flex;
+  justify-content: center;
+  padding: 32px 0 8px;
+}
+
+.cfg-branding-synca {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: lowercase;
+  color: #e74c3c;
+  opacity: 0.65;
+  user-select: none;
 }

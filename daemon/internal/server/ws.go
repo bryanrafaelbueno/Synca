@@ -79,6 +79,40 @@ func (s *WebSocketServer) Start(addr string) error {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	})
+	mux.HandleFunc("/account", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		client := s.engine.DriveClient()
+		if client == nil {
+			http.Error(w, `{"error":"Drive client not initialized"}`, http.StatusInternalServerError)
+			return
+		}
+
+		about, err := client.GetAbout(r.Context())
+		if err != nil {
+			s.engine.RecordNetworkError(err)
+			log.Error().Err(err).Msg("Failed to fetch Google Drive profile")
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+		s.engine.ClearNetworkError()
+
+		res := map[string]interface{}{
+			"email":        about.User.EmailAddress,
+			"display_name": about.User.DisplayName,
+			"photo_url":    about.User.PhotoLink,
+			"used_bytes":   about.StorageQuota.Usage,
+			"total_bytes":  about.StorageQuota.Limit,
+		}
+		_ = json.NewEncoder(w).Encode(res)
+	})
 	mux.HandleFunc("/quit", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "POST" {
 			if !upgrader.CheckOrigin(r) {
@@ -162,9 +196,11 @@ func (s *WebSocketServer) writeWSError(sconn *SafeConn, text string) {
 
 func (s *WebSocketServer) handleCommand(sconn *SafeConn, msg []byte) {
 	var in struct {
-		Action string `json:"action"`
-		Path   string `json:"path"`
-		Mode   string `json:"mode"`
+		Action         string               `json:"action"`
+		Path           string               `json:"path"`
+		Mode           string               `json:"mode"`
+		IgnoredFolders []string             `json:"ignored_folders"`
+		Proxy          config.ProxySettings `json:"proxy"`
 	}
 
 	if err := json.Unmarshal(msg, &in); err != nil {
@@ -215,6 +251,24 @@ func (s *WebSocketServer) handleCommand(sconn *SafeConn, msg []byte) {
 				s.writeWSError(sconn, err.Error())
 			}
 		}()
+	case "set_ignored_folders":
+		if err := s.engine.SetIgnoredFolders(in.IgnoredFolders); err != nil {
+			s.writeWSError(sconn, err.Error())
+			return
+		}
+		snap := s.engine.Snapshot()
+		if data, err := json.Marshal(snap); err == nil {
+			_ = sconn.WriteMessage(websocket.TextMessage, data)
+		}
+	case "set_proxy":
+		if err := s.engine.SetProxySettings(context.Background(), in.Proxy); err != nil {
+			s.writeWSError(sconn, err.Error())
+			return
+		}
+		snap := s.engine.Snapshot()
+		if data, err := json.Marshal(snap); err == nil {
+			_ = sconn.WriteMessage(websocket.TextMessage, data)
+		}
 	case "restart_daemon":
 		// Re-exec same binary as `… daemon` so the process comes back without relying on systemd.
 		go func() {

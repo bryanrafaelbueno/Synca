@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { ProxySettings } from './settingsStore'
 
 export type FileStatus = 'synced' | 'initializing' | 'uploading' | 'verifying' | 'finalizing' | 'queued' | 'conflict' | 'error'
 
@@ -21,6 +22,9 @@ export interface StatusSnapshot {
   files: FileEntry[] | null
   watch_paths: string[]
   watch_path_modes: Record<string, SyncMode>
+  ignored_folders: string[]
+  proxy?: ProxySettings
+  network_error?: string
   total_bytes: number
   total_files: number
   synced_files: number
@@ -35,18 +39,21 @@ interface SyncStore {
   searchQuery: string
   /** Transient message from daemon (e.g. add_watch validation). */
   lastWsError: string | null
+  dismissedNetworkError: string | null
 
   setSnapshot: (snap: StatusSnapshot) => void
   setConnected: (v: boolean) => void
   setError: (e: string | null) => void
   setSearchQuery: (q: string) => void
   setLastWsError: (e: string | null) => void
+  dismissNetworkError: (e: string) => void
 }
 
 const defaultSnapshot: StatusSnapshot = {
   files: [],
   watch_paths: [],
   watch_path_modes: {},
+  ignored_folders: [],
   total_bytes: 0,
   total_files: 0,
   synced_files: 0,
@@ -60,12 +67,14 @@ export const useSyncStore = create<SyncStore>((set) => ({
   error: null,
   searchQuery: '',
   lastWsError: null,
+  dismissedNetworkError: null,
 
   setSnapshot: (snapshot) => set({ snapshot, lastWsError: null }),
   setConnected: (connected) => set({ connected }),
   setError: (error) => set({ error }),
   setSearchQuery: (searchQuery) => set({ searchQuery }),
   setLastWsError: (lastWsError) => set({ lastWsError }),
+  dismissNetworkError: (dismissedNetworkError) => set({ dismissedNetworkError }),
 }))
 
 // Derived selectors

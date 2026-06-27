@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { useState } from 'react';
 import type { SetupState } from '../App';
+import { useSettingsStore } from '../store/settingsStore';
 
 interface ConnectScreenProps {
   setupState: SetupState | 'socket_error' | 'connecting'
@@ -10,6 +11,7 @@ interface ConnectScreenProps {
 
 export function ConnectScreen({ setupState, error, checkSetup }: ConnectScreenProps) {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const { t } = useSettingsStore();
 
   const handleLogin = async () => {
     setIsLoggingIn(true);
@@ -18,7 +20,7 @@ export function ConnectScreen({ setupState, error, checkSetup }: ConnectScreenPr
       checkSetup(); 
     } catch (e) {
       console.error("Fatal error:", e);
-      alert("Login failed: " + e);
+      alert(t('connect_login_failed') + e);
     } finally {
       setIsLoggingIn(false);
     }
@@ -35,16 +37,16 @@ export function ConnectScreen({ setupState, error, checkSetup }: ConnectScreenPr
           </svg>
         </div>
         <h2 className="connect-title">
-           {setupState === 'checking' ? "Starting Synca..." :
-            setupState === 'connecting' ? "Connecting to daemon..." :
-            setupState === 'needs_creds' ? "Initial Setup" :
-            setupState === 'needs_token' ? "Authentication Required" : "Connection Pending"}
+           {setupState === 'checking' ? t('connect_starting_title') :
+            setupState === 'connecting' ? t('connect_daemon_title') :
+            setupState === 'needs_creds' ? t('connect_initial_setup_title') :
+            setupState === 'needs_token' ? t('connect_auth_required_title') : t('connect_pending_title')}
         </h2>
 
         <p className="connect-msg">
-           {setupState === 'checking' ? "Looking for saved settings..." :
-            setupState === 'connecting' ? "Waiting for daemon to start..." :
-            setupState === 'needs_token' ? "Log in to Google Drive to authorize Synca." : error}
+           {setupState === 'checking' ? t('connect_saved_settings') :
+            setupState === 'connecting' ? t('connect_waiting_daemon') :
+            setupState === 'needs_token' ? t('connect_authorize') : error}
         </p>
 
         <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -54,13 +56,13 @@ export function ConnectScreen({ setupState, error, checkSetup }: ConnectScreenPr
               <svg width="20" height="20" viewBox="0 0 20 20" style={{ animation: 'spin 1s linear infinite' }}>
                 <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="40 10" opacity="0.5"/>
               </svg>
-              <span>Starting daemon, please wait...</span>
+              <span>{t('connect_starting_daemon')}</span>
             </div>
           )}
 
           {setupState === 'needs_token' && (
             <button className="btn-connect" onClick={handleLogin} disabled={isLoggingIn}>
-              {isLoggingIn ? "Authenticating on the Web..." : "Log in to Google Drive"}
+              {isLoggingIn ? t('connect_authenticating') : t('connect_login')}
             </button>
           )}
 
@@ -70,7 +72,7 @@ export function ConnectScreen({ setupState, error, checkSetup }: ConnectScreenPr
               onClick={checkSetup}
               style={{ opacity: 0.8, backgroundColor: 'transparent', border: '1px solid currentColor' }}
             >
-              Reload
+              {t('connect_reload')}
             </button>
           )}
         </div>

@@ -2,15 +2,43 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
+
+type ProxyMode string
+type ProxyType string
+
+const (
+	ProxyModeNone   ProxyMode = "none"
+	ProxyModeSystem ProxyMode = "system"
+	ProxyModeManual ProxyMode = "manual"
+
+	ProxyTypeHTTP  ProxyType = "http"
+	ProxyTypeSOCKS ProxyType = "socks"
+)
+
+type ProxySettings struct {
+	Mode               ProxyMode `json:"mode"`
+	Type               ProxyType `json:"type"`
+	Host               string    `json:"host"`
+	Port               string    `json:"port"`
+	Username           string    `json:"username"`
+	Password           string    `json:"password"`
+	InsecureSkipVerify bool      `json:"insecure_skip_verify,omitempty"`
+}
 
 type Config struct {
 	WSAddr         string              `json:"ws_addr"`
 	WatchPaths     []string            `json:"watch_paths"`
 	WatchPathModes map[string]SyncMode `json:"watch_path_modes,omitempty"`
+	IgnoredFolders []string            `json:"ignored_folders,omitempty"`
+	Proxy          ProxySettings       `json:"proxy"`
 	TokenFile      string              `json:"token_file"`
 	CredFile       string              `json:"cred_file"`
 	ConflictDir    string              `json:"conflict_dir"`
@@ -46,8 +74,13 @@ func Load() (*Config, error) {
 	path := filepath.Join(dir, "config.json")
 
 	cfg := &Config{
-		WSAddr:      "localhost:7373",
-		WatchPaths:  []string{},
+		WSAddr:     "localhost:7373",
+		WatchPaths: []string{},
+		IgnoredFolders: []string{
+			"node_modules",
+			".git",
+		},
+		Proxy:       ProxySettings{Mode: ProxyModeNone, Type: ProxyTypeSOCKS, Port: "1080"},
 		TokenFile:   filepath.Join(dir, "token.json"),
 		CredFile:    filepath.Join(dir, "credentials.json"),
 		ConflictDir: filepath.Join(dir, "conflicts"),
@@ -83,6 +116,8 @@ func Load() (*Config, error) {
 		normalized = append(normalized, np)
 	}
 	cfg.WatchPaths = normalized
+	cfg.IgnoredFolders = normalizeIgnoredFolders(cfg.IgnoredFolders)
+	cfg.Proxy = NormalizeProxySettings(cfg.Proxy)
 
 	// Ensure mode map is always initialised (backward compat with older configs)
 	if cfg.WatchPathModes == nil {
@@ -154,6 +189,140 @@ func (c *Config) SetWatchPathMode(path string, mode SyncMode) {
 	c.WatchPathModes[path] = mode
 }
 
+func (c *Config) SetIgnoredFolders(patterns []string) {
+	c.IgnoredFolders = normalizeIgnoredFolders(patterns)
+}
+
+func (c *Config) SetProxySettings(proxy ProxySettings) error {
+	normalized := NormalizeProxySettings(proxy)
+	if err := ValidateProxySettings(normalized); err != nil {
+		return err
+	}
+	c.Proxy = normalized
+	return nil
+}
+
+func NormalizeProxySettings(proxy ProxySettings) ProxySettings {
+	proxy.Mode = ProxyMode(strings.TrimSpace(string(proxy.Mode)))
+	proxy.Type = ProxyType(strings.TrimSpace(string(proxy.Type)))
+	proxy.Host = strings.TrimSpace(proxy.Host)
+	proxy.Port = strings.TrimSpace(proxy.Port)
+	proxy.Username = strings.TrimSpace(proxy.Username)
+
+	switch proxy.Mode {
+	case ProxyModeSystem, ProxyModeManual:
+	default:
+		proxy.Mode = ProxyModeNone
+	}
+
+	switch proxy.Type {
+	case ProxyTypeHTTP, ProxyTypeSOCKS:
+	default:
+		proxy.Type = ProxyTypeSOCKS
+	}
+
+	if proxy.Port == "" {
+		if proxy.Type == ProxyTypeHTTP {
+			proxy.Port = "8080"
+		} else {
+			proxy.Port = "1080"
+		}
+	}
+	if proxy.Mode == ProxyModeManual && strings.Contains(proxy.Host, "://") {
+		if u, err := url.Parse(proxy.Host); err == nil {
+			if u.Hostname() != "" {
+				proxy.Host = u.Hostname()
+			}
+			if u.Port() != "" {
+				proxy.Port = u.Port()
+			}
+			if proxy.Username == "" && u.User != nil {
+				proxy.Username = u.User.Username()
+				proxy.Password, _ = u.User.Password()
+			}
+		}
+	} else if proxy.Mode == ProxyModeManual {
+		if host, port, err := net.SplitHostPort(proxy.Host); err == nil {
+			proxy.Host = strings.Trim(host, "[]")
+			if port != "" {
+				proxy.Port = port
+			}
+		}
+	}
+	if proxy.Mode != ProxyModeManual {
+		proxy.Host = ""
+		proxy.Username = ""
+		proxy.Password = ""
+	}
+	return proxy
+}
+
+func ValidateProxySettings(proxy ProxySettings) error {
+	if proxy.Mode != ProxyModeManual {
+		return nil
+	}
+	if proxy.Host == "" {
+		return fmt.Errorf("proxy host is required")
+	}
+	port, err := strconv.Atoi(proxy.Port)
+	if err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("proxy port must be between 1 and 65535")
+	}
+	if proxy.Type == ProxyTypeHTTP {
+		if _, err := ManualHTTPProxyURL(proxy); err != nil {
+			return err
+		}
+	} else if _, err := ManualSOCKSAddress(proxy); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ManualHTTPProxyURL(proxy ProxySettings) (*url.URL, error) {
+	proxy = NormalizeProxySettings(proxy)
+	host := proxy.Host
+	if !strings.Contains(host, "://") {
+		host = "http://" + host
+	}
+	u, err := url.Parse(host)
+	if err != nil {
+		return nil, fmt.Errorf("invalid proxy host: %w", err)
+	}
+	if u.Host == "" {
+		return nil, fmt.Errorf("invalid proxy host")
+	}
+	if u.Port() == "" {
+		u.Host = net.JoinHostPort(u.Hostname(), proxy.Port)
+	}
+	if proxy.Username != "" {
+		if proxy.Password != "" {
+			u.User = url.UserPassword(proxy.Username, proxy.Password)
+		} else {
+			u.User = url.User(proxy.Username)
+		}
+	}
+	return u, nil
+}
+
+func ManualSOCKSAddress(proxy ProxySettings) (string, error) {
+	proxy = NormalizeProxySettings(proxy)
+	host := proxy.Host
+	if strings.Contains(host, "://") {
+		u, err := url.Parse(host)
+		if err != nil {
+			return "", fmt.Errorf("invalid proxy host: %w", err)
+		}
+		host = u.Hostname()
+		if u.Port() != "" {
+			proxy.Port = u.Port()
+		}
+	}
+	if host == "" {
+		return "", fmt.Errorf("invalid proxy host")
+	}
+	return net.JoinHostPort(host, proxy.Port), nil
+}
+
 func normalizePath(path string) string {
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -172,4 +341,26 @@ func normalizePath(path string) string {
 		path = abs
 	}
 	return filepath.Clean(path)
+}
+
+func normalizeIgnoredFolders(patterns []string) []string {
+	seen := make(map[string]struct{}, len(patterns))
+	normalized := make([]string, 0, len(patterns))
+	for _, pattern := range patterns {
+		pattern = strings.TrimSpace(pattern)
+		pattern = strings.Trim(pattern, `/\`)
+		if pattern == "" {
+			continue
+		}
+		pattern = filepath.Clean(pattern)
+		if pattern == "." {
+			continue
+		}
+		if _, ok := seen[pattern]; ok {
+			continue
+		}
+		seen[pattern] = struct{}{}
+		normalized = append(normalized, pattern)
+	}
+	return normalized
 }

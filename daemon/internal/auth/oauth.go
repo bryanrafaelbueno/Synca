@@ -3,16 +3,21 @@ package auth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 
+	"github.com/synca/daemon/internal/config"
+
 	"github.com/joho/godotenv"
 	"github.com/rs/zerolog/log"
+	netproxy "golang.org/x/net/proxy"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/drive/v3"
@@ -73,7 +78,7 @@ var (
 
 func oauthConfig() *oauth2.Config {
 	loadEnv()
-	
+
 	// Re-read env after loading .env file
 	clientID := os.Getenv("GOOGLE_CLIENT_ID")
 	if clientID == "" {
@@ -151,8 +156,8 @@ func RunOAuthFlow() error {
 	}()
 
 	// Build auth URL with PKCE challenge and random state
-	authURL := cfg.AuthCodeURL(state, 
-		oauth2.AccessTypeOffline, 
+	authURL := cfg.AuthCodeURL(state,
+		oauth2.AccessTypeOffline,
 		oauth2.ApprovalForce,
 		oauth2.SetAuthURLParam("code_challenge", pkce.Challenge),
 		oauth2.SetAuthURLParam("code_challenge_method", "S256"),
@@ -216,7 +221,7 @@ func LoadToken() (*oauth2.Token, error) {
 }
 
 // NewDriveService creates authenticated Drive client
-func NewDriveService(ctx context.Context) (*drive.Service, error) {
+func NewDriveService(ctx context.Context, proxy config.ProxySettings) (*drive.Service, error) {
 	cfg := oauthConfig()
 
 	token, err := LoadToken()
@@ -224,7 +229,79 @@ func NewDriveService(ctx context.Context) (*drive.Service, error) {
 		return nil, err
 	}
 
-	client := cfg.Client(ctx, token)
+	transport := &http.Transport{}
+	switch proxy.Mode {
+	case config.ProxyModeSystem:
+		transport.Proxy = http.ProxyFromEnvironment
+	case config.ProxyModeManual:
+		if proxy.Type == config.ProxyTypeSOCKS && proxy.InsecureSkipVerify {
+			transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		}
+		if proxy.Type == config.ProxyTypeHTTP {
+			proxyURL, err := config.ManualHTTPProxyURL(proxy)
+			if err != nil {
+				return nil, err
+			}
+			transport.Proxy = http.ProxyURL(proxyURL)
+		} else {
+			addr, err := config.ManualSOCKSAddress(proxy)
+			if err != nil {
+				return nil, err
+			}
+			var auth *netproxy.Auth
+			if proxy.Username != "" {
+				auth = &netproxy.Auth{
+					User:     proxy.Username,
+					Password: proxy.Password,
+				}
+			}
+			dialer, err := netproxy.SOCKS5("tcp", addr, auth, netproxy.Direct)
+			if err != nil {
+				return nil, err
+			}
+			transport.DialContext = socksDialContext(dialer)
+		}
+	}
+
+	baseClient := &http.Client{Transport: transport}
+	proxyCtx := context.WithValue(ctx, oauth2.HTTPClient, baseClient)
+	client := &http.Client{
+		Transport: &oauth2.Transport{
+			Base:   transport,
+			Source: cfg.TokenSource(proxyCtx, token),
+		},
+	}
 
 	return drive.NewService(ctx, option.WithHTTPClient(client))
+}
+
+func socksDialContext(dialer netproxy.Dialer) func(context.Context, string, string) (net.Conn, error) {
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		type dialContext interface {
+			DialContext(context.Context, string, string) (net.Conn, error)
+		}
+		if d, ok := dialer.(dialContext); ok {
+			return d.DialContext(ctx, network, address)
+		}
+
+		connCh := make(chan net.Conn, 1)
+		errCh := make(chan error, 1)
+		go func() {
+			conn, err := dialer.Dial(network, address)
+			if err != nil {
+				errCh <- err
+				return
+			}
+			connCh <- conn
+		}()
+
+		select {
+		case conn := <-connCh:
+			return conn, nil
+		case err := <-errCh:
+			return nil, err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 }

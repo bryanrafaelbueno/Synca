@@ -1,14 +1,18 @@
 import { useState, useMemo } from 'react'
 import { ask } from '@tauri-apps/plugin-dialog'
 import { useSyncStore, selectFiles, FileEntry, FileStatus, SyncMode } from '../store/syncStore'
+import { useSettingsStore } from '../store/settingsStore'
+import type { TranslationKey } from '../locales/en'
 
-const SYNC_MODE_LABELS: Record<SyncMode, { label: string; icon: string; desc: string }> = {
-  two_way:       { label: 'Two-Way',      icon: '⇅', desc: 'Sync both directions' },
-  upload_only:   { label: 'Upload Only',  icon: '↑', desc: 'Local → Drive only' },
-  download_only: { label: 'Download Only',icon: '↓', desc: 'Drive → Local only' },
+const SYNC_MODE_LABELS: Record<SyncMode, { label: TranslationKey; icon: string; desc: TranslationKey }> = {
+  two_way:       { label: 'sync_mode_two_way',      icon: '⇅', desc: 'sync_mode_two_way_desc' },
+  upload_only:   { label: 'sync_mode_upload_only',  icon: '↑', desc: 'sync_mode_upload_only_desc' },
+  download_only: { label: 'sync_mode_download_only',icon: '↓', desc: 'sync_mode_download_only_desc' },
 }
 
 function SyncModeSelector({ value, onChange }: { value: SyncMode; onChange: (m: SyncMode) => void }) {
+  const { t } = useSettingsStore()
+
   return (
     <div className="sync-mode-selector">
       {(Object.keys(SYNC_MODE_LABELS) as SyncMode[]).map(mode => (
@@ -17,10 +21,10 @@ function SyncModeSelector({ value, onChange }: { value: SyncMode; onChange: (m: 
           type="button"
           className={`sync-mode-btn ${value === mode ? 'active' : ''}`}
           onClick={() => onChange(mode)}
-          title={SYNC_MODE_LABELS[mode].desc}
+          title={t(SYNC_MODE_LABELS[mode].desc)}
         >
           <span className="sync-mode-icon">{SYNC_MODE_LABELS[mode].icon}</span>
-          <span>{SYNC_MODE_LABELS[mode].label}</span>
+          <span>{t(SYNC_MODE_LABELS[mode].label)}</span>
         </button>
       ))}
     </div>
@@ -28,11 +32,12 @@ function SyncModeSelector({ value, onChange }: { value: SyncMode; onChange: (m: 
 }
 
 function SyncModeBadge({ mode }: { mode: SyncMode }) {
+  const { t } = useSettingsStore()
   const info = SYNC_MODE_LABELS[mode]
   if (!info) return null
   return (
-    <span className={`sync-mode-badge sync-mode-badge-${mode}`} title={info.desc}>
-      {info.icon} {info.label}
+    <span className={`sync-mode-badge sync-mode-badge-${mode}`} title={t(info.desc)}>
+      {info.icon} {t(info.label)}
     </span>
   )
 }
@@ -51,7 +56,7 @@ type TreeNode = {
   file?: FileEntry;
 };
 
-async function pickWatchFolder(): Promise<string | null> {
+async function pickWatchFolder(t: (key: TranslationKey) => string): Promise<string | null> {
   // Try Rust-side dialog first (bypasses JS capability issues)
   try {
     const { invoke } = await import('@tauri-apps/api/core');
@@ -71,7 +76,7 @@ async function pickWatchFolder(): Promise<string | null> {
     const selected = await dialog.open({
       directory: true,
       multiple: false,
-      title: 'Choose folder to sync',
+      title: t('files_choose_folder_title'),
     }) as string | string[] | null;
     if (!selected) return null;
     if (typeof selected === 'string') return selected;
@@ -84,31 +89,29 @@ async function pickWatchFolder(): Promise<string | null> {
 
   // Last resort: manual path entry
   const raw = window.prompt(
-    'Native folder picker is not available.\n\n' +
-    'Please enter the absolute folder path to sync:\n\n' +
-    'Linux:  /home/user/Documents\n' +
-    'Windows: C:\\Users\\user\\Documents'
+    t('files_folder_picker_unavailable')
   );
   return raw?.trim() || null;
 }
 
-const STATUS_LABELS: Record<FileStatus, string> = {
-  synced: 'synced',
-  initializing: 'initializing…',
-  uploading: 'uploading…',
-  verifying: 'verifying…',
-  finalizing: 'finalizing…',
-  queued: 'queued',
-  conflict: 'conflict',
-  error: 'error',
+const STATUS_LABELS: Record<FileStatus, TranslationKey> = {
+  synced: 'status_synced',
+  initializing: 'status_initializing',
+  uploading: 'status_uploading',
+  verifying: 'status_verifying',
+  finalizing: 'status_finalizing',
+  queued: 'status_queued',
+  conflict: 'status_conflict',
+  error: 'status_error',
 }
 
 function StatusPill({ status }: { status: FileStatus }) {
+  const { t } = useSettingsStore()
   const isProgressing = status === 'initializing' || status === 'uploading' || status === 'verifying' || status === 'finalizing';
   return (
     <span className={`pill pill-${status}`}>
       {isProgressing && <span className="pill-spinner" />}
-      {STATUS_LABELS[status]}
+      {t(STATUS_LABELS[status])}
     </span>
   )
 }
@@ -147,6 +150,27 @@ function TreeGuides({ depth }: { depth: number }) {
   return <>{guides}</>;
 }
 
+function EmptyStateIcon({ type }: { type: 'connecting' | 'folder' }) {
+  if (type === 'connecting') {
+    return (
+      <svg className="empty-state-svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M21 12a9 9 0 0 1-9 9" />
+        <path d="M3 12a9 9 0 0 1 9-9" />
+        <path d="M12 3v4" />
+        <path d="M12 17v4" />
+      </svg>
+    )
+  }
+
+  return (
+    <svg className="empty-state-svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+      <path d="M12 11v6" />
+      <path d="M9 14h6" />
+    </svg>
+  )
+}
+
 function FileRow({ entry, depth = 0 }: { entry: FileEntry, depth?: number }) {
   const fileName = entry.local_path.split(/[/\\]/).pop() ?? entry.local_path
 
@@ -180,6 +204,7 @@ function TreeNodeView({ node, depth = 0, sendCommand }: { node: TreeNode, depth?
   const [isOpen, setIsOpen] = useState(true);
   const [editingMode, setEditingMode] = useState(false);
   const watchModes = useSyncStore(state => state.snapshot?.watch_path_modes ?? {});
+  const { t } = useSettingsStore()
 
   const handleRemove = async (path: string) => {
     if (!path) return;
@@ -188,14 +213,14 @@ function TreeNodeView({ node, depth = 0, sendCommand }: { node: TreeNode, depth?
     try {
       const { invoke } = await import('@tauri-apps/api/core');
       confirmed = await invoke('confirm_dialog', {
-        title: 'Remove Folder from Sync',
-        message: `Are you sure you want to stop syncing this folder?\n\nThis will REMOVE all files from Google Drive, but keep your local files untouched.`
+        title: t('files_remove_title'),
+        message: t('files_remove_message')
       });
     } catch (err) {
       console.warn('[handleRemove] Rust dialog failed, falling back to JS:', err);
       confirmed = await ask(
-        `Are you sure you want to stop syncing this folder?\n\nThis will REMOVE all files from Google Drive, but keep your local files untouched.`,
-        { title: 'Remove Folder from Sync', kind: 'warning' }
+        t('files_remove_message'),
+        { title: t('files_remove_title'), kind: 'warning' }
       );
     }
 
@@ -239,7 +264,7 @@ function TreeNodeView({ node, depth = 0, sendCommand }: { node: TreeNode, depth?
             <span
               className="sync-mode-badge-wrap"
               onClick={(e) => { e.stopPropagation(); setEditingMode(!editingMode); }}
-              title="Click to change sync mode"
+              title={t('files_change_mode_title')}
             >
               <SyncModeBadge mode={currentMode} />
             </span>
@@ -251,7 +276,7 @@ function TreeNodeView({ node, depth = 0, sendCommand }: { node: TreeNode, depth?
                 e.stopPropagation();
                 handleRemove(node.localPath);
               }}
-              title="Remove from sync (deletes from Drive)"
+              title={t('files_remove_button_title')}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6" />
@@ -283,14 +308,24 @@ function TreeNodeView({ node, depth = 0, sendCommand }: { node: TreeNode, depth?
 
 export function FileList({ sendCommand }: FileListProps) {
   const files = useSyncStore(selectFiles)
-  const { searchQuery, setSearchQuery, connected, lastWsError, setLastWsError } = useSyncStore()
+  const {
+    searchQuery,
+    setSearchQuery,
+    connected,
+    lastWsError,
+    setLastWsError,
+    dismissedNetworkError,
+    dismissNetworkError,
+  } = useSyncStore()
+  const networkError = useSyncStore(state => state.snapshot?.network_error ?? '')
+  const { t } = useSettingsStore()
   const [pendingFolder, setPendingFolder] = useState<string | null>(null)
   const [pendingMode, setPendingMode] = useState<SyncMode>('two_way')
 
   const onAddWatchFolder = async () => {
     if (!connected) return
     setLastWsError(null)
-    const path = await pickWatchFolder()
+    const path = await pickWatchFolder(t)
     if (!path) return
     setPendingFolder(path)
     setPendingMode('two_way')
@@ -380,12 +415,16 @@ export function FileList({ sendCommand }: FileListProps) {
     <div className="file-list">
       <div className="file-list-header">
         <div className="header-title">
-          <span>Files</span>
+          <span>{t('files_title')}</span>
           {counts.conflict > 0 && (
-            <span className="badge-warn">{counts.conflict} conflict{counts.conflict > 1 ? 's' : ''}</span>
+            <span className="badge-warn">
+              {counts.conflict} {t(counts.conflict > 1 ? 'files_conflict_many' : 'files_conflict_one')}
+            </span>
           )}
           {counts.error > 0 && (
-            <span className="badge-error">{counts.error} error{counts.error > 1 ? 's' : ''}</span>
+            <span className="badge-error">
+              {counts.error} {t(counts.error > 1 ? 'files_error_many' : 'files_error_one')}
+            </span>
           )}
         </div>
         <div className="header-tools">
@@ -397,7 +436,7 @@ export function FileList({ sendCommand }: FileListProps) {
             <input
               className="search-input"
               type="text"
-              placeholder="Search files…"
+              placeholder={t('files_search_placeholder')}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
             />
@@ -405,7 +444,7 @@ export function FileList({ sendCommand }: FileListProps) {
           <button
             type="button"
             className="btn-add-watch"
-            title="Add folder to sync"
+            title={t('files_add_folder_title')}
             disabled={!connected}
             onClick={() => void onAddWatchFolder()}
           >
@@ -414,7 +453,7 @@ export function FileList({ sendCommand }: FileListProps) {
               <line x1="12" y1="11" x2="12" y2="17" />
               <line x1="9" y1="14" x2="15" y2="14" />
             </svg>
-            <span className="btn-add-watch-label">Folder</span>
+            <span className="btn-add-watch-label">{t('files_add_folder')}</span>
           </button>
         </div>
       </div>
@@ -422,7 +461,18 @@ export function FileList({ sendCommand }: FileListProps) {
       {lastWsError && (
         <div className="folder-action-banner" role="status">
           {lastWsError}
-          <button type="button" className="folder-action-dismiss" onClick={() => setLastWsError(null)} aria-label="Close">
+          <button type="button" className="folder-action-dismiss" onClick={() => setLastWsError(null)} aria-label={t('files_cancel')}>
+            ×
+          </button>
+        </div>
+      )}
+
+      {networkError && dismissedNetworkError !== networkError && (
+        <div className="folder-action-banner proxy-error-banner" role="alert">
+          <span>
+            <strong>{t('proxy_error_title')}</strong> {networkError}
+          </span>
+          <button type="button" className="folder-action-dismiss" onClick={() => dismissNetworkError(networkError)} aria-label={t('files_cancel')}>
             ×
           </button>
         </div>
@@ -431,20 +481,20 @@ export function FileList({ sendCommand }: FileListProps) {
       <div className="file-list-body">
         {!connected && (
           <div className="empty-state">
-            <div className="empty-icon">⏳</div>
-            <div className="empty-title">Connecting to daemon…</div>
-            <div className="empty-sub">Please wait</div>
+            <div className="empty-icon"><EmptyStateIcon type="connecting" /></div>
+            <div className="empty-title">{t('files_connecting_title')}</div>
+            <div className="empty-sub">{t('files_connecting_sub')}</div>
           </div>
         )}
 
         {connected && files.length === 0 && (
           <div className="empty-state">
-            <div className="empty-icon">📂</div>
-            <div className="empty-title">No files found</div>
+            <div className="empty-icon"><EmptyStateIcon type="folder" /></div>
+            <div className="empty-title">{t('files_empty_title')}</div>
             <div className="empty-sub">
               {searchQuery
-                ? 'Try a different search term'
-                : 'Click Folder next to the search bar or use synca watch ~/folder in the terminal'}
+                ? t('files_empty_search_sub')
+                : t('files_empty_sub')}
             </div>
           </div>
         )}
@@ -456,14 +506,14 @@ export function FileList({ sendCommand }: FileListProps) {
       {pendingFolder && (
         <div className="add-folder-modal-overlay" onClick={() => setPendingFolder(null)}>
           <div className="add-folder-modal" onClick={(e) => e.stopPropagation()}>
-            <h3 className="add-folder-modal-title">Choose Sync Mode</h3>
+            <h3 className="add-folder-modal-title">{t('files_choose_sync_mode')}</h3>
             <p className="add-folder-modal-path" title={pendingFolder}>
               {pendingFolder.split(/[/\\]/).pop()}
             </p>
             <SyncModeSelector value={pendingMode} onChange={setPendingMode} />
             <div className="add-folder-modal-actions">
-              <button type="button" className="btn-modal-cancel" onClick={() => setPendingFolder(null)}>Cancel</button>
-              <button type="button" className="btn-modal-confirm" onClick={confirmAddFolder}>Add Folder</button>
+              <button type="button" className="btn-modal-cancel" onClick={() => setPendingFolder(null)}>{t('files_cancel')}</button>
+              <button type="button" className="btn-modal-confirm" onClick={confirmAddFolder}>{t('files_add_folder_confirm')}</button>
             </div>
           </div>
         </div>
