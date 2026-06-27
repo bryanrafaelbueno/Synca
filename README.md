@@ -152,17 +152,30 @@ File Location:
 - **Linux**: `~/.config/synca/config.json`
 - **Windows**: `%APPDATA%\synca\config.json` (e.g. `C:\Users\Username\AppData\Roaming\synca\config.json`)
 
+The desktop app now exposes much of this configuration through the Settings page, including account details, language, proxy options, ignored folders, and startup behavior.
+
 Example `config.json`:
 
 ```json
 {
   "ws_addr": "localhost:7373",
-  "watch_paths": [
-    "/home/user/Documents"
+  "watch_paths": [],
+  "ignored_folders": [
+    "node_modules",
+    ".git"
   ],
-  "watch_path_modes": {
-    "/home/user/Documents": "two_way"
+  "proxy": {
+    "mode": "system",
+    "type": "socks",
+    "host": "",
+    "port": "8888",
+    "username": "",
+    "password": "",
+    "insecure_skip_verify": true
   },
+  "token_file": "/home/Username/.config/synca/token.json",
+  "cred_file": "/home/Username/.config/synca/credentials.json",
+  "conflict_dir": "/home/Username/.config/synca/conflicts",
   "log_level": "info"
 }
 ```
