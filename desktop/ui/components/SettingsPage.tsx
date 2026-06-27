@@ -522,7 +522,7 @@ function AboutSection({ t }: { t: (k: TranslationKey) => string }) {
       <div className="cfg-about-rows">
         <div className="cfg-about-row">
           <span className="cfg-about-key">{t('about_version')}</span>
-          <span className="cfg-about-val">v0.3.2</span>
+          <span className="cfg-about-val">v0.4.0</span>
         </div>
         <div className="cfg-about-row">
           <span className="cfg-about-key">{t('about_license')}</span>
