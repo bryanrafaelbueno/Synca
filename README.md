@@ -266,7 +266,7 @@ sudo apt update
 sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
 ```
 
-### 3. Build Toolslazy
+### 3. Build Tools
 - **Linux**: `make`, `gcc`, `pkg-config`.
 - **Windows**: Use **Git Bash** (recommended) or install `make` via [Chocolatey](https://chocolatey.org/) (`choco install make`).
 
