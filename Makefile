@@ -188,7 +188,7 @@ release-windows: daemon-windows
 	@node -e "const fs = require('fs'); fs.rmSync('desktop/src-tauri/target/release/bundle/nsis', {recursive:true, force:true});"
 	
 	@echo "Building Tauri app..."
-	cd desktop && npm run tauri build
+	cd desktop && npm run tauri build -- --target x86_64-pc-windows-gnu
 	
 	@echo "Copying to releases/windows..."
 	@node -e "const fs = require('fs'), path = require('path'); const d = 'releases/windows'; fs.mkdirSync(d, {recursive:true}); const s = 'desktop/src-tauri/target/release/bundle/nsis'; if(fs.existsSync(s)) { fs.readdirSync(s).filter(f=>f.endsWith('.exe')).forEach(f=>fs.copyFileSync(path.join(s,f), path.join(d,f))) }"

@@ -272,7 +272,7 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev
 
 ### 4. Cross-platform Bundling
 - **Windows Setup**: To build the `.exe` installer, you need **NSIS**.
-- **Windows from Linux**: Install `mingw-w64` and `nsis` (`sudo apt install nsis mingw-w64`).
+- **Windows from Linux**: Install `mingw-w64` and `nsis` (`sudo apt install nsis mingw-w64`), and then run "rustup target add x86_64-pc-windows-gnu" to add the windows builder to rust.
 - **AppImage**: Download [linuxdeploy](https://github.com/linuxdeploy/linuxdeploy) and add it to your PATH or a `tools/` folder.
 
 ---
