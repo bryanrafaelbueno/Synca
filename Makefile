@@ -183,7 +183,7 @@ release-linux: daemon
 
 	@echo "✅ Linux release ready"
 
-release-windows: daemon
+release-windows: daemon-windows
 	@echo "Cleaning old NSIS bundles..."
 	@node -e "const fs = require('fs'); fs.rmSync('desktop/src-tauri/target/release/bundle/nsis', {recursive:true, force:true});"
 	
@@ -193,6 +193,7 @@ release-windows: daemon
 	@echo "Copying to releases/windows..."
 	@node -e "const fs = require('fs'), path = require('path'); const d = 'releases/windows'; fs.mkdirSync(d, {recursive:true}); const s = 'desktop/src-tauri/target/release/bundle/nsis'; if(fs.existsSync(s)) { fs.readdirSync(s).filter(f=>f.endsWith('.exe')).forEach(f=>fs.copyFileSync(path.join(s,f), path.join(d,f))) }"
 
+	@echo "✅ Windows release ready"
 # ── Dev ───────────────────────────────────────────────────────
 dev: daemon
 	-$(KILL_DAEMON)
