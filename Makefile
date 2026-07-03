@@ -185,15 +185,31 @@ release-linux: daemon
 
 release-windows: daemon-windows
 	@echo "Cleaning old NSIS bundles..."
-	@node -e "const fs = require('fs'); fs.rmSync('desktop/src-tauri/target/release/bundle/nsis', {recursive:true, force:true});"
-	
-	@echo "Building Tauri app..."
-	cd desktop && npm run tauri build -- --target x86_64-pc-windows-gnu
-	
-	@echo "Copying to releases/windows..."
-	@node -e "const fs = require('fs'), path = require('path'); const d = 'releases/windows'; fs.mkdirSync(d, {recursive:true}); const s = 'desktop/src-tauri/target/release/bundle/nsis'; if(fs.existsSync(s)) { fs.readdirSync(s).filter(f=>f.endsWith('.exe')).forEach(f=>fs.copyFileSync(path.join(s,f), path.join(d,f))) }"
+	@node -e "const fs = require('fs'); fs.rmSync('desktop/src-tauri/target', {recursive:true, force:true});"
 
-	@echo "✅ Windows release ready"
+	@echo "Building Tauri Windows (GNU)..."
+	cd desktop && npm run tauri build -- --target x86_64-pc-windows-gnu
+
+	@echo "Copying to releases/windows..."
+	@node -e "\
+	const fs = require('fs');\
+	const path = require('path');\
+	\
+	const file = 'desktop/src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/Synca_0.4.0_x64-setup.exe';\
+	const outDir = 'releases/windows';\
+	\
+	fs.mkdirSync(outDir, { recursive: true });\
+	\
+	if (!fs.existsSync(file)) {\
+	console.error('❌ Installer not found:', file);\
+	process.exit(1);\
+	}\
+	\
+	const dest = path.join(outDir, path.basename(file));\
+	fs.copyFileSync(file, dest);\
+	\
+	console.log('✔ Copied Windows installer:', dest);\
+	"
 # ── Dev ───────────────────────────────────────────────────────
 dev: daemon
 	-$(KILL_DAEMON)

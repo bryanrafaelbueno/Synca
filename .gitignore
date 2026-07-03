@@ -13,7 +13,6 @@ releases/
 
 # Credentials (NEVER commit these)# Embedded secrets (temporary)
 daemon/internal/auth/.env.embedded
-*.json
 !desktop/package.json
 !desktop/tsconfig.json
 !desktop/src-tauri/tauri.conf.json
