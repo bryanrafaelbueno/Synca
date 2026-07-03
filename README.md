@@ -13,6 +13,7 @@
   <img src="https://img.shields.io/badge/go-1.22+-00ADD8"/>
   <img src="https://img.shields.io/badge/tauri-2.x-FFC131"/>
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20windows-lightgrey"/>
+  <img src="https://github.com/bryanrafaelbueno/synca/actions/workflows/ci.yml/badge.svg"/>
 </p>
 
 ## 📦 Download (Release)
