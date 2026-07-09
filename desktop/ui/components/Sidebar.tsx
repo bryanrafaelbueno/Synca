@@ -62,7 +62,6 @@ export function Sidebar({ sendCommand, currentView, onNavigate }: Props) {
           <img src={brandLogo} alt="" width={28} height={28} className="brand-icon-img" />
         </div>
         <span className="brand-name">Synca</span>
-        <span className={`brand-dot ${stats.isRunning ? 'running' : 'stopped'}`} />
       </div>
 
       <div className="sidebar-section">
