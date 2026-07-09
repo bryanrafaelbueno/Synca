@@ -229,17 +229,6 @@ synca status
 
 ---
 
-## 🗺️ Roadmap
-
-* [x] Automatic upload
-* [x] Functional interface
-* [x] Conflicts
-* [x] System tray
-* [x] Full bidirectional sync
-* [ ] Multi-cloud (Rclone)
-
----
-
 ## 🤝 Contributing
 
 1. Fork the project
