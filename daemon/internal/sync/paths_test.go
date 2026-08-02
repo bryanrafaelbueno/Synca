@@ -23,7 +23,7 @@ func TestRelWithin(t *testing.T) {
 		{name: "dot-dot escape", root: "/home/user/watch", path: "/home/user/watch/../secret", wantRel: "", wantOK: false},
 		{name: "dot-dot escape two levels", root: "/home/user/watch", path: "/home/user/watch/a/../../secret", wantRel: "", wantOK: false},
 		{name: "unrelated absolute path", root: "/home/user/watch", path: "/etc/passwd", wantRel: "", wantOK: false},
-		{name: "drive root-like path", root: "/", path: "/etc/passwd", wantRel: "etc/passwd", wantOK: true},
+		{name: "drive root-like path", root: "/", path: "/etc/passwd", wantRel: filepath.FromSlash("etc/passwd"), wantOK: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
