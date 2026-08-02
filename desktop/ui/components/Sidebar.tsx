@@ -154,7 +154,7 @@ export function Sidebar({ sendCommand, currentView, onNavigate }: Props) {
       </div>
 
       <div className="sidebar-footer">
-        <span className="footer-version">v0.4.0</span>
+        <span className="footer-version">v1.0.0</span>
         <a
           className="footer-link"
           href="https://github.com/bryanrafaelbueno/synca"

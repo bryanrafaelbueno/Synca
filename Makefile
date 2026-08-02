@@ -192,7 +192,7 @@ release-windows: daemon-windows
 	const fs = require('fs');\
 	const path = require('path');\
 	\
-	const file = 'desktop/src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/Synca_0.4.0_x64-setup.exe';\
+	const file = 'desktop/src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/Synca_1.0.0_x64-setup.exe';\
 	const outDir = 'releases/windows';\
 	\
 	fs.mkdirSync(outDir, { recursive: true });\
