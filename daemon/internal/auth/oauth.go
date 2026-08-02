@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -29,7 +30,7 @@ import (
 // identifier is embedded in every distributed binary, is not confidential,
 // and must never be treated as a secret. Development builds may override it
 // through GOOGLE_CLIENT_ID in a local .env file.
-const googleClientID = "781406235807-pj42r8r51ou6k0pubvaghvs3sfq0p68m.apps.googleusercontent.com"
+const googleClientID = "781406235807-7m588db3g6fhc3f6eon0paqln776hasn.apps.googleusercontent.com"
 
 const (
 	localRedirectPort = "9373"
@@ -68,13 +69,39 @@ func oauthConfig() *oauth2.Config {
 		clientID = googleClientID
 	}
 
+	// Google's token endpoint now requires the client secret even for
+	// desktop-app OAuth clients; a request without it is rejected with
+	// "client_secret is missing". The secret is a runtime-only value: it is
+	// read from the environment (or a gitignored local .env) and is never
+	// committed, embedded in binaries, or injected by CI.
 	return &oauth2.Config{
 		ClientID:     clientID,
-		ClientSecret: "",
+		ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
 		Endpoint:     google.Endpoint,
 		Scopes:       []string{drive.DriveScope},
 		RedirectURL:  localRedirectURL,
 	}
+}
+
+// missingClientSecretRejection reports whether err is Google's token-endpoint
+// rejection for requests that omitted a required client secret.
+func missingClientSecretRejection(err error) bool {
+	var retrieveErr *oauth2.RetrieveError
+	if !errors.As(err, &retrieveErr) {
+		return false
+	}
+	return retrieveErr.ErrorCode == "invalid_request" &&
+		strings.Contains(retrieveErr.ErrorDescription, "client_secret is missing")
+}
+
+// ExplainTokenError decorates a Google token-endpoint failure with an
+// actionable message when the cause is a missing runtime client secret.
+// The original error remains in the chain for diagnostics.
+func ExplainTokenError(err error) error {
+	if err == nil || !missingClientSecretRejection(err) {
+		return err
+	}
+	return fmt.Errorf("%w: Google rejected the request because the OAuth client requires its client secret at the token endpoint (Google enforces this even for desktop-app clients). Set GOOGLE_CLIENT_SECRET in a local .env file — it is read at runtime and never committed or embedded in builds", err)
 }
 
 // validateClientID rejects a missing or misconfigured installed-app client
@@ -176,7 +203,7 @@ func RunOAuthFlow() error {
 	// Exchange with PKCE verifier
 	token, err := cfg.Exchange(ctx, code, oauth2.SetAuthURLParam("code_verifier", pkce.Verifier))
 	if err != nil {
-		return fmt.Errorf("token exchange failed: %w", err)
+		return fmt.Errorf("token exchange failed: %w", ExplainTokenError(err))
 	}
 
 	if err := saveToken(token); err != nil {

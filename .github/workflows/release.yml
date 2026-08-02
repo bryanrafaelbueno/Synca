@@ -101,7 +101,7 @@ jobs:
           V="$(bash scripts/check-versions.sh)"
           bin_linux="bin/synca-daemon-x86_64-unknown-linux-gnu"
           bin_windows="bin/synca-daemon-x86_64-pc-windows-gnu.exe"
-          client_id="781406235807-pj42r8r51ou6k0pubvaghvs3sfq0p68m"
+          client_id="781406235807-7m588db3g6fhc3f6eon0paqln776hasn"
 
           if [ "$V" != "$("$bin_linux" --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" ]; then
             echo "daemon version mismatch" >&2
@@ -157,7 +157,10 @@ jobs:
         with:
           name: release
           path: |
-            releases/**
+            releases/**/*.AppImage
+            releases/**/*.deb
+            releases/**/*.exe
+            releases/**/SHA256SUMS
             synca-sbom.spdx.json
           if-no-files-found: error
           retention-days: 30

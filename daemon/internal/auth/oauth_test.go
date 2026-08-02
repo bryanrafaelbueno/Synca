@@ -1,8 +1,12 @@
 package auth
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
+
+	"golang.org/x/oauth2"
 )
 
 func TestOAuthConfigUsesCommittedPublicClientID(t *testing.T) {
@@ -14,11 +18,11 @@ func TestOAuthConfigUsesCommittedPublicClientID(t *testing.T) {
 	if cfg.ClientID != googleClientID {
 		t.Fatalf("oauthConfig().ClientID = %q, want committed public client ID %q", cfg.ClientID, googleClientID)
 	}
-	// Installed apps are public clients: with PKCE the token exchange must
-	// not depend on a client secret, and a secret must never be distributed
-	// with the binary.
+	// The client secret must never be distributed with the binary: the
+	// committed config always has an empty secret unless the operator
+	// provides one at runtime through the environment.
 	if cfg.ClientSecret != "" {
-		t.Fatalf("oauthConfig().ClientSecret = %q, want empty for public-client PKCE flow", cfg.ClientSecret)
+		t.Fatalf("oauthConfig().ClientSecret = %q, want empty when GOOGLE_CLIENT_SECRET is not set", cfg.ClientSecret)
 	}
 	if len(cfg.Scopes) == 0 {
 		t.Fatal("oauthConfig() must request at least one scope")
@@ -30,11 +34,23 @@ func TestOAuthConfigUsesCommittedPublicClientID(t *testing.T) {
 
 func TestOAuthConfigEnvOverride(t *testing.T) {
 	t.Setenv("GOOGLE_CLIENT_ID", "override-id.apps.googleusercontent.com")
+	t.Setenv("GOOGLE_CLIENT_SECRET", "")
 
 	cfg := oauthConfig()
 
 	if cfg.ClientID != "override-id.apps.googleusercontent.com" {
 		t.Fatalf("oauthConfig().ClientID = %q, want env override to win", cfg.ClientID)
+	}
+}
+
+func TestOAuthConfigReadsClientSecretFromEnv(t *testing.T) {
+	t.Setenv("GOOGLE_CLIENT_ID", "")
+	t.Setenv("GOOGLE_CLIENT_SECRET", "test-client-secret")
+
+	cfg := oauthConfig()
+
+	if cfg.ClientSecret != "test-client-secret" {
+		t.Fatalf("oauthConfig().ClientSecret = %q, want runtime secret from environment", cfg.ClientSecret)
 	}
 }
 
@@ -72,5 +88,41 @@ func TestValidateClientID(t *testing.T) {
 				t.Fatalf("validateClientID(%q) error = %v, want ok=%v", tc.id, err, tc.ok)
 			}
 		})
+	}
+}
+
+func TestExplainTokenErrorMissingClientSecret(t *testing.T) {
+	re := &oauth2.RetrieveError{
+		ErrorCode:        "invalid_request",
+		ErrorDescription: "client_secret is missing.",
+	}
+
+	err := ExplainTokenError(re)
+
+	if err == nil {
+		t.Fatal("ExplainTokenError returned nil for a missing-client-secret rejection")
+	}
+	if !strings.Contains(err.Error(), "GOOGLE_CLIENT_SECRET") {
+		t.Fatalf("ExplainTokenError() = %q, want actionable GOOGLE_CLIENT_SECRET guidance", err)
+	}
+	if !errors.Is(err, re) {
+		t.Fatal("ExplainTokenError() must preserve the original error in the chain")
+	}
+}
+
+func TestExplainTokenErrorOtherFailuresPassThrough(t *testing.T) {
+	re := &oauth2.RetrieveError{
+		ErrorCode:        "invalid_grant",
+		ErrorDescription: "Bad Request",
+	}
+
+	if got := ExplainTokenError(re); got != re {
+		t.Fatalf("ExplainTokenError() = %v, want original error unchanged for non-secret failures", got)
+	}
+	if got := ExplainTokenError(fmt.Errorf("network down")); got == nil || !strings.Contains(got.Error(), "network down") {
+		t.Fatalf("ExplainTokenError() = %v, want unrelated errors passed through", got)
+	}
+	if got := ExplainTokenError(nil); got != nil {
+		t.Fatalf("ExplainTokenError(nil) = %v, want nil", got)
 	}
 }

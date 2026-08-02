@@ -227,7 +227,7 @@ jobs:
           set -euo pipefail
           V="$(bash scripts/check-versions.sh)"
           bin_linux="bin/synca-daemon-x86_64-unknown-linux-gnu"
-          client_id="781406235807-pj42r8r51ou6k0pubvaghvs3sfq0p68m"
+          client_id="781406235807-7m588db3g6fhc3f6eon0paqln776hasn"
 
           if [ "$V" != "$("$bin_linux" --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" ]; then
             echo "daemon version mismatch" >&2

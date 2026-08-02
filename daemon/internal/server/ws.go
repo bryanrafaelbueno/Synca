@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
 
+	"github.com/synca/daemon/internal/auth"
 	"github.com/synca/daemon/internal/config"
 	syncengine "github.com/synca/daemon/internal/sync"
 )
@@ -98,6 +99,7 @@ func (s *WebSocketServer) Start(addr string) error {
 		about, err := client.GetAbout(r.Context())
 		if err != nil {
 			s.engine.RecordNetworkError(err)
+			err = auth.ExplainTokenError(err)
 			log.Error().Err(err).Msg("Failed to fetch Google Drive profile")
 			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
 			return

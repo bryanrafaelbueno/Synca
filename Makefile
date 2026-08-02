@@ -175,7 +175,7 @@ release-linux: daemon
 	mkdir -p releases/linux
 	rm -rf releases/linux/*
 
-	cp -r desktop/src-tauri/target/release/bundle/deb/* releases/linux/ 2>/dev/null || true
+	cp desktop/src-tauri/target/release/bundle/deb/*.deb releases/linux/ 2>/dev/null || true
 	cp -r desktop/src-tauri/target/release/bundle/appimage/*.AppImage releases/linux/ 2>/dev/null || true
 
 	@echo "✅ Linux release ready"

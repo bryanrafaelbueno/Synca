@@ -124,9 +124,11 @@ cd synca
 # Release builds use the committed public OAuth client ID; development
 # builds may override it with a local .env file:
 cp .env.example .env
-# Edit .env and add your own GOOGLE_CLIENT_ID (optional for development;
-# a client secret is never required or embedded — Synca is an installed
-# public client and uses PKCE)
+# Edit .env and add your own GOOGLE_CLIENT_ID (optional for development).
+# Google's token endpoint now requires the client secret even for
+# desktop-app clients, so also set GOOGLE_CLIENT_SECRET in .env when your
+# client enforces it. The secret is read at runtime only and is never
+# committed or embedded in release binaries (PKCE still protects the flow).
 
 make setup
 ```
