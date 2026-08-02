@@ -32,6 +32,23 @@ import (
 // through GOOGLE_CLIENT_ID in a local .env file.
 const googleClientID = "781406235807-7m588db3g6fhc3f6eon0paqln776hasn.apps.googleusercontent.com"
 
+// googleClientSecret is the client secret of the installed Synca desktop
+// OAuth client. Google's token endpoint now requires it even for
+// desktop-app clients. A desktop client secret is public-client material: it
+// ships inside every installed copy, is extractable by design, and is not
+// confidential — PKCE is what actually protects the authorization flow.
+// The value is deliberately NOT committed in source (GitHub secret scanning
+// would flag a GOCSPX- value and notify Google): release builds inject it at
+// compile time via
+//
+//	go build -ldflags "-X github.com/synca/daemon/internal/auth.googleClientSecret=<value>"
+//
+// from the protected GOOGLE_CLIENT_SECRET Actions secret. Local builds that
+// do not pass the flag leave it empty; operators may also set the
+// GOOGLE_CLIENT_SECRET environment variable at runtime, which takes
+// precedence over the build-time value.
+var googleClientSecret string
+
 const (
 	localRedirectPort = "9373"
 	localRedirectURL  = "http://localhost:9373/oauth/callback"
@@ -47,8 +64,9 @@ func configDir() string {
 }
 
 // loadEnv loads a physical .env file for development overrides. Release
-// builds carry the public client identifier as a constant and never embed
-// secret material.
+// builds carry the public client identifier as a constant and the desktop
+// client secret only when CI injects it through build flags; no secret
+// material lives in the repository.
 func loadEnv() {
 	dirs := []string{".", "..", "../.."}
 	for _, dir := range dirs {
@@ -69,14 +87,14 @@ func oauthConfig() *oauth2.Config {
 		clientID = googleClientID
 	}
 
-	// Google's token endpoint now requires the client secret even for
-	// desktop-app OAuth clients; a request without it is rejected with
-	// "client_secret is missing". The secret is a runtime-only value: it is
-	// read from the environment (or a gitignored local .env) and is never
-	// committed, embedded in binaries, or injected by CI.
+	clientSecret := os.Getenv("GOOGLE_CLIENT_SECRET")
+	if clientSecret == "" {
+		clientSecret = googleClientSecret
+	}
+
 	return &oauth2.Config{
 		ClientID:     clientID,
-		ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+		ClientSecret: clientSecret,
 		Endpoint:     google.Endpoint,
 		Scopes:       []string{drive.DriveScope},
 		RedirectURL:  localRedirectURL,
@@ -101,7 +119,7 @@ func ExplainTokenError(err error) error {
 	if err == nil || !missingClientSecretRejection(err) {
 		return err
 	}
-	return fmt.Errorf("%w: Google rejected the request because the OAuth client requires its client secret at the token endpoint (Google enforces this even for desktop-app clients). Set GOOGLE_CLIENT_SECRET in a local .env file — it is read at runtime and never committed or embedded in builds", err)
+	return fmt.Errorf("%w: Google rejected the request because the OAuth client requires its client secret at the token endpoint (Google enforces this even for desktop-app clients). Set GOOGLE_CLIENT_SECRET in a local .env file, or rebuild with the client secret embedded via -ldflags", err)
 }
 
 // validateClientID rejects a missing or misconfigured installed-app client

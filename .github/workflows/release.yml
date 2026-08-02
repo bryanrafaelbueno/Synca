@@ -90,12 +90,18 @@ jobs:
         run: npm ci
 
       - name: Build Linux (no credentials)
+        env:
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
         run: make release-linux
 
       - name: Build Windows (no credentials)
+        env:
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
         run: make release-windows
 
       - name: Smoke test and secret scan
+        env:
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
         run: |
           set -euo pipefail
           V="$(bash scripts/check-versions.sh)"
@@ -120,12 +126,19 @@ jobs:
               echo "missing binary $f" >&2
               exit 1
             fi
-            if strings "$f" | grep -qiE "GOOGLE_CLIENT_SECRET|YOUR_CLIENT|ghp_[A-Za-z0-9]{20}|-----BEGIN (ENCRYPTED |RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY( BLOCK)?-----"; then
+            # The desktop client secret is deliberately embedded in release
+            # builds (public-client material); the scan therefore blocks only
+            # accidental secrets, not the committed client secret.
+            if strings "$f" | grep -qiE "YOUR_CLIENT|ghp_[A-Za-z0-9]{20}|-----BEGIN (ENCRYPTED |RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY( BLOCK)?-----"; then
               echo "secret-shaped material found in $f" >&2
               exit 1
             fi
             if ! strings "$f" | grep -q "$client_id"; then
               echo "committed public client ID missing in $f" >&2
+              exit 1
+            fi
+            if [ -n "$GOOGLE_CLIENT_SECRET" ] && ! strings "$f" | grep -qF "$GOOGLE_CLIENT_SECRET"; then
+              echo "embedded OAuth client secret missing in $f" >&2
               exit 1
             fi
           done

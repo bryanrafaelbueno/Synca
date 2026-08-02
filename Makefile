@@ -31,16 +31,26 @@ endif
 # Export Go variables for cross-platform compatibility
 export CGO_ENABLED=0
 
+# The desktop OAuth client secret is public-client material (extractable from
+# any installed copy; PKCE is the real protection), but it is never committed:
+# when GOOGLE_CLIENT_SECRET is present (release CI injects it from the
+# protected Actions secret), it is embedded at build time. Runtime
+# GOOGLE_CLIENT_SECRET overrides the embedded value.
+DAEMON_LDFLAGS :=
+ifneq ($(GOOGLE_CLIENT_SECRET),)
+DAEMON_LDFLAGS := -ldflags "-X github.com/synca/daemon/internal/auth.googleClientSecret=$(GOOGLE_CLIENT_SECRET)"
+endif
+
 # ── Backend (Go daemon) ────────────────────────────────────────
 daemon:
 	@echo "Building synca daemon..."
-	cd daemon && go build -o $(DAEMON_BIN) ./cmd/synca
+	cd daemon && go build $(DAEMON_LDFLAGS) -o $(DAEMON_BIN) ./cmd/synca
 
 daemon-windows: export GOOS=windows
 daemon-windows: export GOARCH=amd64
 daemon-windows:
 	@echo "Building synca daemon (Windows)..."
-	cd daemon && go build -o ../bin/synca-daemon-x86_64-pc-windows-gnu.exe ./cmd/synca
+	cd daemon && go build $(DAEMON_LDFLAGS) -o ../bin/synca-daemon-x86_64-pc-windows-gnu.exe ./cmd/synca
 
 daemon-run: daemon
 	bin/$(notdir $(DAEMON_BIN)) daemon

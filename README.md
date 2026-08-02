@@ -121,14 +121,14 @@ git clone https://github.com/bryanrafaelbueno/synca
 cd synca
 
 # Configure credentials for development
-# Release builds use the committed public OAuth client ID; development
-# builds may override it with a local .env file:
+# Release builds use the committed public OAuth client ID and embed the
+# desktop client secret at compile time from the GOOGLE_CLIENT_SECRET
+# Actions secret; development builds may override with a local .env file:
 cp .env.example .env
-# Edit .env and add your own GOOGLE_CLIENT_ID (optional for development).
-# Google's token endpoint now requires the client secret even for
-# desktop-app clients, so also set GOOGLE_CLIENT_SECRET in .env when your
-# client enforces it. The secret is read at runtime only and is never
-# committed or embedded in release binaries (PKCE still protects the flow).
+# Edit .env and add your own GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET
+# (optional for development). Google requires the client secret at its token
+# endpoint even for desktop-app clients; the runtime value in .env wins over
+# any value embedded at build time.
 
 make setup
 ```

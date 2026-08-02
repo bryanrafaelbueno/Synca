@@ -12,17 +12,19 @@ import (
 func TestOAuthConfigUsesCommittedPublicClientID(t *testing.T) {
 	t.Setenv("GOOGLE_CLIENT_ID", "")
 	t.Setenv("GOOGLE_CLIENT_SECRET", "")
+	restore := setBuildTimeSecret("")
+	defer restore()
 
 	cfg := oauthConfig()
 
 	if cfg.ClientID != googleClientID {
 		t.Fatalf("oauthConfig().ClientID = %q, want committed public client ID %q", cfg.ClientID, googleClientID)
 	}
-	// The client secret must never be distributed with the binary: the
-	// committed config always has an empty secret unless the operator
-	// provides one at runtime through the environment.
+	// Plain builds (and tests) carry no client secret: the value is injected
+	// only by release builds through -ldflags from the protected
+	// GOOGLE_CLIENT_SECRET Actions secret, or overridden at runtime.
 	if cfg.ClientSecret != "" {
-		t.Fatalf("oauthConfig().ClientSecret = %q, want empty when GOOGLE_CLIENT_SECRET is not set", cfg.ClientSecret)
+		t.Fatalf("oauthConfig().ClientSecret = %q, want empty without a build-time or runtime secret", cfg.ClientSecret)
 	}
 	if len(cfg.Scopes) == 0 {
 		t.Fatal("oauthConfig() must request at least one scope")
@@ -46,12 +48,35 @@ func TestOAuthConfigEnvOverride(t *testing.T) {
 func TestOAuthConfigReadsClientSecretFromEnv(t *testing.T) {
 	t.Setenv("GOOGLE_CLIENT_ID", "")
 	t.Setenv("GOOGLE_CLIENT_SECRET", "test-client-secret")
+	restore := setBuildTimeSecret("build-time-secret")
+	defer restore()
 
 	cfg := oauthConfig()
 
 	if cfg.ClientSecret != "test-client-secret" {
 		t.Fatalf("oauthConfig().ClientSecret = %q, want runtime secret from environment", cfg.ClientSecret)
 	}
+}
+
+func TestOAuthConfigFallsBackToBuildTimeSecret(t *testing.T) {
+	t.Setenv("GOOGLE_CLIENT_ID", "")
+	t.Setenv("GOOGLE_CLIENT_SECRET", "")
+	restore := setBuildTimeSecret("build-time-secret")
+	defer restore()
+
+	cfg := oauthConfig()
+
+	if cfg.ClientSecret != "build-time-secret" {
+		t.Fatalf("oauthConfig().ClientSecret = %q, want build-time injected secret", cfg.ClientSecret)
+	}
+}
+
+// setBuildTimeSecret sets the build-time injected package variable for the
+// duration of a test and restores the previous value on return.
+func setBuildTimeSecret(value string) func() {
+	previous := googleClientSecret
+	googleClientSecret = value
+	return func() { googleClientSecret = previous }
 }
 
 func TestOAuthConfigCommittedClientIDIsValid(t *testing.T) {
