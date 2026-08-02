@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/synca/daemon/internal/config"
 
@@ -76,12 +77,32 @@ func oauthConfig() *oauth2.Config {
 	}
 }
 
+// validateClientID rejects a missing or misconfigured installed-app client
+// identifier. Installed-app identifiers always have the shape
+// "<project>-<identifier>.apps.googleusercontent.com". Validation is
+// structural so that placeholder text (for example a "YOUR_CLIENT_ID_HERE"
+// template value) is never compiled into the released binary, where artifact
+// secret scans would flag it.
+func validateClientID(id string) error {
+	if id == "" {
+		return fmt.Errorf("GOOGLE_CLIENT_ID is missing. Set it in a local .env file or rebuild with a valid public client ID")
+	}
+	if !strings.HasSuffix(id, ".apps.googleusercontent.com") {
+		return fmt.Errorf("GOOGLE_CLIENT_ID %q is not a valid installed-app client ID (must end with .apps.googleusercontent.com)", id)
+	}
+	parts := strings.SplitN(id, "-", 2)
+	if len(parts) != 2 || len(parts[0]) == 0 || len(parts[1]) == 0 {
+		return fmt.Errorf("GOOGLE_CLIENT_ID %q is not a valid installed-app client ID (must have shape <project>-<identifier>.apps.googleusercontent.com)", id)
+	}
+	return nil
+}
+
 // RunOAuthFlow handles browser login + token exchange using PKCE
 func RunOAuthFlow() error {
 	cfg := oauthConfig()
 
-	if cfg.ClientID == "" || cfg.ClientID == "YOUR_CLIENT_ID_HERE.apps.googleusercontent.com" {
-		return fmt.Errorf("GOOGLE_CLIENT_ID is missing. Set it in a local .env file or rebuild with a valid public client ID")
+	if err := validateClientID(cfg.ClientID); err != nil {
+		return err
 	}
 
 	// Generate a cryptographically secure random state to protect against CSRF attacks

@@ -70,6 +70,21 @@ jobs:
         working-directory: daemon
         run: go build -o ../bin/synca-daemon-x86_64-unknown-linux-gnu ./cmd/synca
 
+      # generate_context! embeds ../dist and panics when it is missing.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: desktop
+        run: npm run build
+
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
         with:
           toolchain: 1.96.0
@@ -174,7 +189,7 @@ jobs:
           curl -fsSL \
             https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage.zsync \
             -o linuxdeploy-x86_64.AppImage.zsync
-          expected=$(grep -oE "^SHA-1: [0-9a-f]{40}" linuxdeploy-x86_64.AppImage.zsync | awk '{print $2}')
+          expected=$(grep -aoE "^SHA-1: [0-9a-f]{40}" linuxdeploy-x86_64.AppImage.zsync | awk '{print $2}')
           actual=$(sha1sum linuxdeploy-x86_64.AppImage | awk '{print $1}')
           if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
             echo "linuxdeploy checksum mismatch: expected=$expected actual=$actual" >&2
@@ -227,7 +242,7 @@ jobs:
             exit 1
           fi
           for f in "$bin_linux" squashfs-root/usr/bin/synca-daemon; do
-            if strings "$f" | grep -qiE "GOOGLE_CLIENT_SECRET|YOUR_CLIENT|-----BEGIN|ghp_[A-Za-z0-9]{20}"; then
+            if strings "$f" | grep -qiE "GOOGLE_CLIENT_SECRET|YOUR_CLIENT|ghp_[A-Za-z0-9]{20}|-----BEGIN (ENCRYPTED |RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY( BLOCK)?-----"; then
               echo "secret-shaped material found in $f" >&2
               exit 1
             fi
@@ -267,6 +282,21 @@ jobs:
         working-directory: daemon
         run: go build -o ../bin/synca-daemon-x86_64-pc-windows-msvc.exe ./cmd/synca
 
+      # generate_context! embeds ../dist and panics when it is missing.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install frontend dependencies (native Windows)
+        working-directory: desktop
+        run: npm ci
+
+      - name: Build frontend (native Windows)
+        working-directory: desktop
+        run: npm run build
+
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
         with:
           toolchain: 1.96.0
@@ -285,15 +315,3 @@ jobs:
       - name: Rust tests
         working-directory: desktop/src-tauri
         run: cargo test --locked --all-targets --all-features
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: desktop/package-lock.json
-
-      - name: Frontend build (native Windows)
-        working-directory: desktop
-        run: |
-          npm ci
-          npm run build

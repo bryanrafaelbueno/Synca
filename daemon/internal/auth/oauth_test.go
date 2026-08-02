@@ -53,15 +53,24 @@ func TestOAuthConfigCommittedClientIDIsValid(t *testing.T) {
 	}
 }
 
-func TestRunOAuthFlowRejectsMissingClientID(t *testing.T) {
-	// A caller-provided override of the empty string must not silently fall
-	// through to a broken flow.
-	t.Setenv("GOOGLE_CLIENT_ID", "")
-	if googleClientID == "" {
-		t.Skip("committed client ID configured; guard is not exercised")
+func TestValidateClientID(t *testing.T) {
+	cases := []struct {
+		name string
+		id   string
+		ok   bool
+	}{
+		{"committed public client id", googleClientID, true},
+		{"env override with valid shape", "override-id.apps.googleusercontent.com", true},
+		{"empty", "", false},
+		{"placeholder shape", "YOUR_CLIENT_ID_HERE.apps.googleusercontent.com", false},
+		{"not a google client id", "not-a-client-id", false},
 	}
-	cfg := oauthConfig()
-	if cfg.ClientID == "" {
-		t.Fatal("oauthConfig() must always yield a non-empty client ID")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateClientID(tc.id)
+			if (err == nil) != tc.ok {
+				t.Fatalf("validateClientID(%q) error = %v, want ok=%v", tc.id, err, tc.ok)
+			}
+		})
 	}
 }
