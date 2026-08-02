@@ -319,18 +319,14 @@ func (e *Engine) handleEvent(ctx context.Context, event watcher.FileEvent) {
 			if _, err := e.ensureRemoteFolderTree(ctx, path); err != nil {
 				e.RecordNetworkError(err)
 				log.Error().Err(err).Str("path", path).Msg("Failed to sync folder")
-				errMsg := err.Error()
-				if strings.Contains(errMsg, "403") || strings.Contains(errMsg, "400") {
-					errMsg = "Path too deep: Drive limit is 100 nested folders"
-				}
-				e.setStatusDir(path, StatusError, errMsg)
+				e.setStatusDir(path, StatusError, DriveErrorMessage(err.Error()))
 			} else {
 				e.setStatusDir(path, StatusSynced, "")
 			}
 		}
 		return
 	}
-	if isTempFile(path) {
+	if IsTempFile(path) {
 		return
 	}
 
@@ -559,18 +555,14 @@ func (e *Engine) fullSync(ctx context.Context) {
 						if _, err := e.ensureRemoteFolderTree(ctx, path); err != nil {
 							e.RecordNetworkError(err)
 							log.Error().Err(err).Str("path", path).Msg("Failed to sync folder during full sync")
-							errMsg := err.Error()
-							if strings.Contains(errMsg, "403") || strings.Contains(errMsg, "400") {
-								errMsg = "Path too deep: Drive limit is 100 nested folders"
-							}
-							e.setStatusDir(path, StatusError, errMsg)
+							e.setStatusDir(path, StatusError, DriveErrorMessage(err.Error()))
 						} else {
 							e.setStatusDir(path, StatusSynced, "")
 						}
 					}
 					return nil
 				}
-				if isTempFile(path) {
+				if IsTempFile(path) {
 					return nil
 				}
 				paths = append(paths, path)
@@ -649,7 +641,13 @@ func (e *Engine) downloadRemoteFiles(ctx context.Context, watchRoot string) {
 			continue
 		}
 
-		localPath := filepath.Join(watchRoot, rf.Name)
+		// Remote names are untrusted data: prove the destination stays
+		// inside the watch root before any local write.
+		localPath, err := SafeJoin(watchRoot, rf.Name)
+		if err != nil {
+			log.Warn().Err(err).Str("root", watchRoot).Str("name", rf.Name).Msg("Skipping remote file with unsafe name")
+			continue
+		}
 		if e.isIgnoredPath(localPath) {
 			e.forgetLocalPath(localPath)
 			continue
@@ -855,37 +853,10 @@ func (e *Engine) Snapshot() StatusSnapshot {
 func (e *Engine) modeForPath(filePath string) config.SyncMode {
 	e.pathsMu.RLock()
 	defer e.pathsMu.RUnlock()
-	for _, root := range e.cfg.WatchPaths {
-		rel, err := filepath.Rel(root, filePath)
-		if err != nil {
-			continue
-		}
-		if rel == "." || !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return e.cfg.GetWatchPathMode(root)
-		}
+	if root, ok := ResolveRoot(e.cfg.WatchPaths, filePath); ok {
+		return e.cfg.GetWatchPathMode(root)
 	}
 	return config.ModeTwoWay
-}
-
-func isTempFile(path string) bool {
-	base := filepath.Base(path)
-	if len(base) == 0 {
-		return false
-	}
-	// Skip hidden files, temp editors, swap files
-	if base[0] == '.' {
-		return true
-	}
-	ext := filepath.Ext(base)
-	switch ext {
-	case ".swp", ".swx", ".tmp", ".part", ".crdownload":
-		return true
-	}
-	// Vim/Emacs temp
-	if base[len(base)-1] == '~' {
-		return true
-	}
-	return false
 }
 
 func isNetworkProxyError(err error) bool {
@@ -923,37 +894,21 @@ func isNetworkProxyError(err error) bool {
 
 func (e *Engine) isIgnoredPath(localPath string) bool {
 	e.pathsMu.RLock()
+	rules := NewIgnoreRules(e.cfg.IgnoredFolders)
 	roots := slices.Clone(e.cfg.WatchPaths)
-	ignored := slices.Clone(e.cfg.IgnoredFolders)
 	e.pathsMu.RUnlock()
 
-	if len(ignored) == 0 {
+	if rules.Empty() {
 		return false
 	}
 
 	for _, root := range roots {
-		rel, err := filepath.Rel(root, localPath)
-		if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		rel, ok := RelWithin(root, localPath)
+		if !ok || rel == "." {
 			continue
 		}
-		rel = filepath.Clean(rel)
-		parts := strings.Split(rel, string(filepath.Separator))
-		for _, pattern := range ignored {
-			pattern = filepath.Clean(strings.TrimSpace(pattern))
-			if pattern == "" || pattern == "." {
-				continue
-			}
-			if len(parts) > 0 && parts[0] == pattern {
-				return true
-			}
-			for _, part := range parts {
-				if part == pattern {
-					return true
-				}
-			}
-			if rel == pattern || strings.HasPrefix(rel, pattern+string(filepath.Separator)) {
-				return true
-			}
+		if rules.Matches(rel) {
+			return true
 		}
 	}
 	return false
@@ -994,18 +949,16 @@ func (e *Engine) resolveRemoteParentID(ctx context.Context, localPath string) (s
 	e.pathsMu.RLock()
 	roots := slices.Clone(e.cfg.WatchPaths)
 	e.pathsMu.RUnlock()
-	for _, watchRoot := range roots {
-		rel, err := filepath.Rel(watchRoot, localPath)
-		if err != nil {
-			continue
-		}
-		if rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			continue
-		}
-		parentDir := filepath.Dir(localPath)
-		return e.ensureRemoteFolderTree(ctx, parentDir)
+
+	root, ok := ResolveRoot(roots, localPath)
+	if !ok {
+		return "", nil
 	}
-	return "", nil
+	// The root itself has no remote parent; only descendants are created.
+	if rel, _ := RelWithin(root, localPath); rel == "." {
+		return "", nil
+	}
+	return e.ensureRemoteFolderTree(ctx, filepath.Dir(localPath))
 }
 
 func (e *Engine) ensureRemoteFolderTree(ctx context.Context, localDir string) (string, error) {
@@ -1027,23 +980,15 @@ func (e *Engine) ensureRemoteFolderTree(ctx context.Context, localDir string) (s
 	}
 	e.mu.RUnlock()
 
-	var matchedRoot string
 	e.pathsMu.RLock()
 	roots := slices.Clone(e.cfg.WatchPaths)
 	e.pathsMu.RUnlock()
-	for _, root := range roots {
-		rel, err := filepath.Rel(root, localDir)
-		if err != nil {
-			continue
-		}
-		if rel == "." || !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			matchedRoot = root
-			break
-		}
-	}
-	if matchedRoot == "" {
+
+	root, ok := ResolveRoot(roots, localDir)
+	if !ok {
 		return "", nil
 	}
+	matchedRoot := root
 
 	relDir, err := filepath.Rel(filepath.Dir(matchedRoot), localDir)
 	if err != nil {
@@ -1054,7 +999,7 @@ func (e *Engine) ensureRemoteFolderTree(ctx context.Context, localDir string) (s
 
 	// Pre-flight check: Google Drive limits folder nesting to 100 levels.
 	if len(parts) >= 100 {
-		return "", fmt.Errorf("Path too deep: Drive limit is 100 nested folders")
+		return "", fmt.Errorf("path too deep: Drive limit is 100 nested folders")
 	}
 
 	parentID := ""
@@ -1102,18 +1047,18 @@ func (e *Engine) AddWatchRootWithMode(ctx context.Context, raw string, mode conf
 	e.cfg.AddWatchPathWithMode(raw, mode)
 	if len(e.cfg.WatchPaths) == before {
 		e.pathsMu.Unlock()
-		return fmt.Errorf("This folder is already in the sync list")
+		return fmt.Errorf("this folder is already in the sync list")
 	}
 	root := e.cfg.WatchPaths[len(e.cfg.WatchPaths)-1]
 
 	if fi, err := os.Stat(root); err != nil {
 		e.cfg.RemoveWatchPath(root)
 		e.pathsMu.Unlock()
-		return fmt.Errorf("Could not access the folder: %w", err)
+		return fmt.Errorf("could not access the folder: %w", err)
 	} else if !fi.IsDir() {
 		e.cfg.RemoveWatchPath(root)
 		e.pathsMu.Unlock()
-		return fmt.Errorf("Please select a folder (directory)")
+		return fmt.Errorf("please select a folder (directory)")
 	}
 
 	if err := e.cfg.Save(); err != nil {
@@ -1125,7 +1070,7 @@ func (e *Engine) AddWatchRootWithMode(ctx context.Context, raw string, mode conf
 		e.cfg.RemoveWatchPath(root)
 		_ = e.cfg.Save()
 		e.pathsMu.Unlock()
-		return fmt.Errorf("Could not watch the folder: %w", err)
+		return fmt.Errorf("could not watch the folder: %w", err)
 	}
 	e.pathsMu.Unlock()
 
@@ -1293,7 +1238,7 @@ func (e *Engine) indexNewWatchRoot(ctx context.Context, watchPath string) {
 			}
 			return nil
 		}
-		if isTempFile(path) {
+		if IsTempFile(path) {
 			return nil
 		}
 		if d.IsDir() {
@@ -1309,11 +1254,7 @@ func (e *Engine) indexNewWatchRoot(ctx context.Context, watchPath string) {
 		e.setStatusDir(path, StatusInitializing, "")
 		if _, err := e.ensureRemoteFolderTree(ctx, path); err != nil {
 			log.Error().Err(err).Str("path", path).Msg("Failed to sync folder structure")
-			errMsg := err.Error()
-			if strings.Contains(errMsg, "403") || strings.Contains(errMsg, "400") {
-				errMsg = "Path too deep: Drive limit is 100 nested folders"
-			}
-			e.setStatusDir(path, StatusError, errMsg)
+			e.setStatusDir(path, StatusError, DriveErrorMessage(err.Error()))
 		} else {
 			e.setStatusDir(path, StatusSynced, "")
 		}

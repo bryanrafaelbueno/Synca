@@ -1,7 +1,8 @@
 .PHONY: daemon daemon-windows daemon-run app-dev app-build \
         release-linux release-windows appimage-manual \
         dev build setup clean check-deps check-libs \
-        check-webkit collect-webkit-deps check-appimage
+        check-webkit collect-webkit-deps check-appimage \
+        test test-go test-rust test-frontend test-contracts
 
 # ── OS Detection ──────────────────────────────────────────────
 ifeq ($(OS),Windows_NT)
@@ -33,17 +34,13 @@ export CGO_ENABLED=0
 # ── Backend (Go daemon) ────────────────────────────────────────
 daemon:
 	@echo "Building synca daemon..."
-	@node -e "const fs = require('fs'); fs.existsSync('.env') ? fs.copyFileSync('.env', 'daemon/internal/auth/.env.embedded') : fs.writeFileSync('daemon/internal/auth/.env.embedded', '');"
 	cd daemon && go build -o $(DAEMON_BIN) ./cmd/synca
-	@node -e "require('fs').writeFileSync('daemon/internal/auth/.env.embedded', '');"
 
 daemon-windows: export GOOS=windows
 daemon-windows: export GOARCH=amd64
 daemon-windows:
 	@echo "Building synca daemon (Windows)..."
-	@node -e "const fs = require('fs'); fs.existsSync('.env') ? fs.copyFileSync('.env', 'daemon/internal/auth/.env.embedded') : fs.writeFileSync('daemon/internal/auth/.env.embedded', '');"
 	cd daemon && go build -o ../bin/synca-daemon-x86_64-pc-windows-gnu.exe ./cmd/synca
-	@node -e "require('fs').writeFileSync('daemon/internal/auth/.env.embedded', '');"
 
 daemon-run: daemon
 	bin/$(notdir $(DAEMON_BIN)) daemon
@@ -230,3 +227,29 @@ clean:
 # ── Dependency Check ───────────────────────────────────────────
 check-deps:
 	@node -e "const { execSync } = require('child_process'); try { execSync('go version'); execSync('rustc --version'); execSync('npm --version'); console.log('✅ Core dependencies OK'); } catch (e) { console.error('❌ Missing dependency: ' + e.message); process.exit(1); }"
+
+# ── Tests (mirrors the CI quality gates) ───────────────────────
+test: test-contracts test-go test-rust test-frontend
+
+test-contracts:
+	@echo "==> Version consistency"
+	bash scripts/check-versions.sh
+
+test-go:
+	@echo "==> Go daemon: format, vet, tests, race"
+	@test -z "$$(cd daemon && gofmt -l .)" || (echo "❌ gofmt issues:"; cd daemon && gofmt -l .; exit 1)
+	cd daemon && go vet ./...
+	cd daemon && go test ./...
+	cd daemon && CGO_ENABLED=1 go test -race ./...
+
+test-rust:
+	@echo "==> Rust host: format, clippy, tests"
+	cd desktop/src-tauri && cargo fmt --check
+	cd desktop/src-tauri && cargo clippy --locked --all-targets --all-features -- -D warnings
+	cd desktop/src-tauri && cargo test --locked --all-targets --all-features
+
+test-frontend:
+	@echo "==> Frontend: install, build, audit"
+	cd desktop && npm ci
+	cd desktop && npm run build
+	cd desktop && npm audit --audit-level=high

@@ -121,8 +121,12 @@ git clone https://github.com/bryanrafaelbueno/synca
 cd synca
 
 # Configure credentials for development
+# Release builds use the committed public OAuth client ID; development
+# builds may override it with a local .env file:
 cp .env.example .env
-# Edit .env and add your GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET
+# Edit .env and add your own GOOGLE_CLIENT_ID (optional for development;
+# a client secret is never required or embedded — Synca is an installed
+# public client and uses PKCE)
 
 make setup
 ```
@@ -244,10 +248,10 @@ synca status
 If you are setting up Synca on a new machine, follow this checklist to ensure you have everything needed to compile and run the project.
 
 ### 1. Core Prerequisites
-The following compilers and runtimes must be installed on your system:
-- **Go 1.22+**: [Download Go](https://go.dev/dl/)
-- **Rust (Latest Stable)**: [Install Rust](https://rustup.rs/)
-- **Node.js (v18+) & NPM**: [Download Node.js](https://nodejs.org/)
+The following compilers and runtimes must be installed on your system. CI pins the same versions; a mismatch is a release gate failure (see `scripts/check-versions.sh`):
+- **Go 1.25+**: [Download Go](https://go.dev/dl/)
+- **Rust 1.96.0** (pinned; newer stable may work but the pinned version is the CI baseline): [Install Rust](https://rustup.rs/)
+- **Node.js 24 & NPM**: [Download Node.js](https://nodejs.org/)
 
 ### 2. System Dependencies (Linux)
 Tauri requires several development headers. On Ubuntu/Debian, install them with:
@@ -272,6 +276,27 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev
 2.  **Install Dependencies**: Run `make setup`.
 3.  **Run Dev Mode**: Run `make dev`.
 4.  **Build Release**: Run `make release-linux` or `make release-windows`.
+
+---
+
+## 🧪 Running Tests
+
+All test suites live in the repository and run exactly as CI does. From the project root:
+
+```bash
+make test
+```
+
+This runs the version-consistency contract check, the Go daemon tests (fmt, vet, unit, race), the Rust host gates (fmt, clippy, tests), and the frontend build with dependency audit. Individual layers:
+
+```bash
+make test-go          # daemon: gofmt, go vet, go test, go test -race
+make test-rust        # desktop/src-tauri: cargo fmt, clippy -D warnings, cargo test
+make test-frontend    # desktop: npm ci, npm run build, npm audit
+make test-contracts   # scripts/check-versions.sh
+```
+
+Static analysis and vulnerability scans additionally run in CI: `staticcheck`, `govulncheck` (Go), `npm audit` (frontend), plus secret scanning (gitleaks), workflow lint (actionlint), and shellcheck.
 
 ---
 

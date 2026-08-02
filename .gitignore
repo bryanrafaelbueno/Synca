@@ -7,12 +7,12 @@ daemon/vendor/
 desktop/node_modules/
 desktop/dist/
 desktop/src-tauri/target/
+desktop/src-tauri/gen/
 
 # Releases
 releases/
 
-# Credentials (NEVER commit these)# Embedded secrets (temporary)
-daemon/internal/auth/.env.embedded
+# Credentials (NEVER commit these)
 !desktop/package.json
 !desktop/tsconfig.json
 !desktop/src-tauri/tauri.conf.json

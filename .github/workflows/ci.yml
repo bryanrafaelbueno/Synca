@@ -3,15 +3,152 @@ name: CI
 on:
   push:
     branches: [main, develop]
+    tags: ["v*"]
   pull_request:
 
-jobs:
-  build:
-    name: Linux + Windows (GNU)
-    runs-on: ubuntu-24.04
+permissions:
+  contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go-checks:
+    name: Go (fmt, vet, tests, race, static, vuln)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b
+        with:
+          go-version: "1.25"
+          cache-dependency-path: daemon/go.sum
+
+      - name: Format check
+        working-directory: daemon
+        run: test -z "$(gofmt -l .)"
+
+      - name: Vet
+        working-directory: daemon
+        run: go vet ./...
+
+      - name: Tests
+        working-directory: daemon
+        run: go test ./...
+
+      - name: Race tests
+        working-directory: daemon
+        run: go test -race ./...
+
+      - name: Static analysis
+        working-directory: daemon
+        run: go run honnef.co/go/tools/cmd/staticcheck@v0.7.0 ./...
+
+      - name: Vulnerability scan
+        working-directory: daemon
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+
+  rust-checks:
+    name: Rust (fmt, clippy, tests)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: 1.96.0
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4
+
+      - name: Format check
+        working-directory: desktop/src-tauri
+        run: cargo fmt --check
+
+      - name: Clippy (deny warnings)
+        working-directory: desktop/src-tauri
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+
+      - name: Tests
+        working-directory: desktop/src-tauri
+        run: cargo test --locked --all-targets --all-features
+
+  frontend-checks:
+    name: Frontend (build, audit)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Production build
+        working-directory: desktop
+        run: npm run build
+
+      - name: Audit dependencies (high and critical block)
+        working-directory: desktop
+        run: npm audit --audit-level=high
+
+  contract-checks:
+    name: Contract (version consistency)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Version consistency
+        run: bash scripts/check-versions.sh
+
+  security-checks:
+    name: Security (secrets, workflows, shell)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b
+        with:
+          go-version: "1.25"
+
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Workflow lint (actionlint)
+        run: |
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/ci.yml .github/workflows/release.yml
+
+      - name: Shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          shellcheck packaging/*.sh scripts/*.sh
+
+      - name: No credential files in tree
+        run: |
+          test ! -f .env
+          test ! -f daemon/internal/auth/.env.embedded
+
+  package-linux:
+    name: Package Linux (deb + AppImage)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    needs: [go-checks, rust-checks, frontend-checks, contract-checks, security-checks]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Install dependencies
         run: |
@@ -34,56 +171,135 @@ jobs:
             libssl-dev \
             libfuse2t64
 
-      - name: Install linuxdeploy
+      - name: Install pinned linuxdeploy (versioned + checksum verified)
         run: |
           mkdir -p "$HOME/tools/linuxdeploy"
-          wget \
-            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage \
-            -O "$HOME/tools/linuxdeploy/linuxdeploy-x86_64.AppImage"
-          chmod +x "$HOME/tools/linuxdeploy/linuxdeploy-x86_64.AppImage"
+          curl -fsSL \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage \
+            -o linuxdeploy-x86_64.AppImage
+          curl -fsSL \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage.zsync \
+            -o linuxdeploy-x86_64.AppImage.zsync
+          expected=$(grep -oE "^SHA-1: [0-9a-f]{40}" linuxdeploy-x86_64.AppImage.zsync | awk '{print $2}')
+          actual=$(sha1sum linuxdeploy-x86_64.AppImage | awk '{print $1}')
+          if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+            echo "linuxdeploy checksum mismatch: expected=$expected actual=$actual" >&2
+            exit 1
+          fi
+          chmod +x linuxdeploy-x86_64.AppImage
+          mv linuxdeploy-x86_64.AppImage "$HOME/tools/linuxdeploy/linuxdeploy-x86_64.AppImage"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: desktop/package-lock.json
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b
         with:
-          go-version: "1.22"
+          go-version: "1.25"
+          cache-dependency-path: daemon/go.sum
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: 1.96.0
 
-      - name: Add Windows GNU target
-        run: rustup target add x86_64-pc-windows-gnu
-
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4
 
       - name: Install frontend dependencies
         working-directory: desktop
         run: npm ci
 
-      - name: Verify Tauri
-        working-directory: desktop
-        run: npx tauri --version
-
-      - name: Create .env
-        run: |
-          cat > .env <<EOF
-          GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
-          EOF
-
-      - name: Build Linux
+      - name: Build Linux packages (no credentials)
         run: make release-linux
 
-      - name: Build Windows (GNU)
-        run: make release-windows
+      - name: Smoke test and secret scan
+        run: |
+          set -euo pipefail
+          V="$(bash scripts/check-versions.sh)"
+          bin_linux="bin/synca-daemon-x86_64-unknown-linux-gnu"
+          client_id="781406235807-pj42r8r51ou6k0pubvaghvs3sfq0p68m"
 
-      - uses: actions/upload-artifact@v4
+          if [ "$V" != "$("$bin_linux" --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" ]; then
+            echo "daemon version mismatch" >&2
+            exit 1
+          fi
+
+          make check-appimage
+
+          releases/linux/Synca-x86_64.AppImage --appimage-extract >/dev/null
+          if [ ! -f squashfs-root/usr/bin/synca-daemon ]; then
+            echo "sidecar missing in AppImage" >&2
+            exit 1
+          fi
+          for f in "$bin_linux" squashfs-root/usr/bin/synca-daemon; do
+            if strings "$f" | grep -qiE "GOOGLE_CLIENT_SECRET|YOUR_CLIENT|-----BEGIN|ghp_[A-Za-z0-9]{20}"; then
+              echo "secret-shaped material found in $f" >&2
+              exit 1
+            fi
+            if ! strings "$f" | grep -q "$client_id"; then
+              echo "committed public client ID missing in $f" >&2
+              exit 1
+            fi
+          done
+          rm -rf squashfs-root
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: releases
-          path: |
-            releases/linux/**/*.AppImage
-            releases/linux/**/*.deb
-            releases/windows/**/*.exe
+          name: linux-packages
+          path: releases/linux
+          if-no-files-found: error
+          retention-days: 7
+
+  windows-native:
+    name: Windows native (Go, Rust, frontend)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b
+        with:
+          go-version: "1.25"
+          cache-dependency-path: daemon/go.sum
+
+      - name: Go vet and tests (native Windows)
+        working-directory: daemon
+        run: |
+          go vet ./...
+          go test ./...
+
+      - name: Build daemon sidecar (Windows MSVC)
+        working-directory: daemon
+        run: go build -o ../bin/synca-daemon-x86_64-pc-windows-msvc.exe ./cmd/synca
+
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: 1.96.0
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4
+
+      - name: Rust format check
+        working-directory: desktop/src-tauri
+        run: cargo fmt --check
+
+      - name: Rust clippy (deny warnings)
+        working-directory: desktop/src-tauri
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+
+      - name: Rust tests
+        working-directory: desktop/src-tauri
+        run: cargo test --locked --all-targets --all-features
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Frontend build (native Windows)
+        working-directory: desktop
+        run: |
+          npm ci
+          npm run build

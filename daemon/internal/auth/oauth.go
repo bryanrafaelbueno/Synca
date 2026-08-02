@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
-	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -24,8 +23,12 @@ import (
 	"google.golang.org/api/option"
 )
 
-//go:embed .env.embedded
-var embeddedEnv string
+// googleClientID is the public OAuth client identifier of the installed
+// Synca application. Installed applications are public clients: this
+// identifier is embedded in every distributed binary, is not confidential,
+// and must never be treated as a secret. Development builds may override it
+// through GOOGLE_CLIENT_ID in a local .env file.
+const googleClientID = "781406235807-pj42r8r51ou6k0pubvaghvs3sfq0p68m.apps.googleusercontent.com"
 
 const (
 	localRedirectPort = "9373"
@@ -41,10 +44,10 @@ func configDir() string {
 	return filepath.Join(dir, "synca")
 }
 
-// loadEnv attempts to load .env from current dir or parent dirs,
-// falling back to embedded credentials if available.
+// loadEnv loads a physical .env file for development overrides. Release
+// builds carry the public client identifier as a constant and never embed
+// secret material.
 func loadEnv() {
-	// 1. Try physical .env files (Dev mode)
 	dirs := []string{".", "..", "../.."}
 	for _, dir := range dirs {
 		envPath := filepath.Join(dir, ".env")
@@ -54,44 +57,19 @@ func loadEnv() {
 			return
 		}
 	}
-
-	// 2. Try embedded .env (Production/Release mode)
-	if embeddedEnv != "" {
-		env, err := godotenv.Unmarshal(embeddedEnv)
-		if err == nil {
-			for k, v := range env {
-				if os.Getenv(k) == "" {
-					os.Setenv(k, v)
-				}
-			}
-			log.Debug().Msg("Loaded environment from embedded fallback")
-			return
-		}
-	}
 }
-
-// Embedded Google OAuth2 Credentials fallback
-var (
-	googleClientID     = os.Getenv("GOOGLE_CLIENT_ID")
-	googleClientSecret = os.Getenv("GOOGLE_CLIENT_SECRET")
-)
 
 func oauthConfig() *oauth2.Config {
 	loadEnv()
 
-	// Re-read env after loading .env file
 	clientID := os.Getenv("GOOGLE_CLIENT_ID")
 	if clientID == "" {
-		clientID = googleClientID // Fallback
-	}
-	clientSecret := os.Getenv("GOOGLE_CLIENT_SECRET")
-	if clientSecret == "" {
-		clientSecret = googleClientSecret // Fallback
+		clientID = googleClientID
 	}
 
 	return &oauth2.Config{
 		ClientID:     clientID,
-		ClientSecret: clientSecret,
+		ClientSecret: "",
 		Endpoint:     google.Endpoint,
 		Scopes:       []string{drive.DriveScope},
 		RedirectURL:  localRedirectURL,
@@ -102,8 +80,8 @@ func oauthConfig() *oauth2.Config {
 func RunOAuthFlow() error {
 	cfg := oauthConfig()
 
-	if cfg.ClientID == "" || cfg.ClientID == "YOUR_CLIENT_ID.apps.googleusercontent.com" {
-		return fmt.Errorf("GOOGLE_CLIENT_ID is missing. Please set it in your .env file at the project root")
+	if cfg.ClientID == "" || cfg.ClientID == "YOUR_CLIENT_ID_HERE.apps.googleusercontent.com" {
+		return fmt.Errorf("GOOGLE_CLIENT_ID is missing. Set it in a local .env file or rebuild with a valid public client ID")
 	}
 
 	// Generate a cryptographically secure random state to protect against CSRF attacks

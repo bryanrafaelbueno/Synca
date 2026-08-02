@@ -27,12 +27,12 @@ const (
 
 // Conflict represents a detected conflict between local and remote files.
 type Conflict struct {
-	LocalPath    string
-	RemoteName   string
-	LocalModTime time.Time
+	LocalPath     string
+	RemoteName    string
+	LocalModTime  time.Time
 	RemoteModTime time.Time
-	LocalMD5     string
-	RemoteMD5    string
+	LocalMD5      string
+	RemoteMD5     string
 }
 
 // Detector checks whether a local file conflicts with a remote file.

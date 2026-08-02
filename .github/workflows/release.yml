@@ -3,18 +3,46 @@ name: Release
 on:
   push:
     tags:
-      - "*"
+      - "v*"
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
+  validate:
+    name: Validate tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Tag is semantic version
+        run: |
+          echo "$GITHUB_REF_NAME" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            || { echo "tag ${GITHUB_REF_NAME} is not vMAJOR.MINOR.PATCH" >&2; exit 1; }
+
+      - name: Tag matches declared version everywhere
+        run: |
+          V="$(bash scripts/check-versions.sh)"
+          if [ "$GITHUB_REF_NAME" != "v$V" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match declared version v${V}" >&2
+            exit 1
+          fi
+
   build:
     name: Build release artifacts
+    needs: validate
     runs-on: ubuntu-24.04
-
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Install dependencies
         run: |
@@ -37,70 +65,139 @@ jobs:
             libssl-dev \
             libfuse2t64
 
-      - name: Install linuxdeploy
+      - name: Install pinned linuxdeploy (versioned + checksum verified)
         run: |
           mkdir -p "$HOME/tools/linuxdeploy"
-          wget \
-            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage \
-            -O "$HOME/tools/linuxdeploy/linuxdeploy-x86_64.AppImage"
-          chmod +x "$HOME/tools/linuxdeploy/linuxdeploy-x86_64.AppImage"
+          curl -fsSL \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage \
+            -o linuxdeploy-x86_64.AppImage
+          curl -fsSL \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage.zsync \
+            -o linuxdeploy-x86_64.AppImage.zsync
+          expected=$(grep -oE "^SHA-1: [0-9a-f]{40}" linuxdeploy-x86_64.AppImage.zsync | awk '{print $2}')
+          actual=$(sha1sum linuxdeploy-x86_64.AppImage | awk '{print $1}')
+          if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+            echo "linuxdeploy checksum mismatch: expected=$expected actual=$actual" >&2
+            exit 1
+          fi
+          chmod +x linuxdeploy-x86_64.AppImage
+          mv linuxdeploy-x86_64.AppImage "$HOME/tools/linuxdeploy/linuxdeploy-x86_64.AppImage"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: desktop/package-lock.json
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b
         with:
-          go-version: "1.22"
+          go-version: "1.25"
+          cache-dependency-path: daemon/go.sum
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: 1.96.0
 
       - name: Add Windows GNU target
         run: rustup target add x86_64-pc-windows-gnu
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4
 
       - name: Install frontend dependencies
         working-directory: desktop
         run: npm ci
 
-      - name: Create .env
-        run: |
-          cat > .env <<EOF
-          GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
-          EOF
-
-      - name: Build Linux
+      - name: Build Linux (no credentials)
         run: make release-linux
 
-      - name: Build Windows (GNU)
+      - name: Build Windows (no credentials)
         run: make release-windows
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - name: Smoke test and secret scan
+        run: |
+          set -euo pipefail
+          V="$(bash scripts/check-versions.sh)"
+          bin_linux="bin/synca-daemon-x86_64-unknown-linux-gnu"
+          bin_windows="bin/synca-daemon-x86_64-pc-windows-gnu.exe"
+          client_id="781406235807-pj42r8r51ou6k0pubvaghvs3sfq0p68m"
+
+          if [ "$V" != "$("$bin_linux" --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" ]; then
+            echo "daemon version mismatch" >&2
+            exit 1
+          fi
+
+          make check-appimage
+
+          releases/linux/Synca-x86_64.AppImage --appimage-extract >/dev/null
+          if [ ! -f squashfs-root/usr/bin/synca-daemon ]; then
+            echo "sidecar missing in AppImage" >&2
+            exit 1
+          fi
+          for f in "$bin_linux" "$bin_windows" squashfs-root/usr/bin/synca-daemon; do
+            if [ ! -f "$f" ]; then
+              echo "missing binary $f" >&2
+              exit 1
+            fi
+            if strings "$f" | grep -qiE "GOOGLE_CLIENT_SECRET|YOUR_CLIENT|-----BEGIN|ghp_[A-Za-z0-9]{20}"; then
+              echo "secret-shaped material found in $f" >&2
+              exit 1
+            fi
+            if ! strings "$f" | grep -q "$client_id"; then
+              echo "committed public client ID missing in $f" >&2
+              exit 1
+            fi
+          done
+          rm -rf squashfs-root
+
+      - name: Generate checksums
+        working-directory: releases
+        run: |
+          find . -type f \( -name "*.AppImage" -o -name "*.deb" -o -name "*.exe" \) -print0 \
+            | xargs -0 sha256sum | tee SHA256SUMS
+          sha256sum -c SHA256SUMS
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@9f7302141466aa6482940f15371237e9d9f4c34a
+        with:
+          path: releases
+          format: spdx-json
+          artifact-name: synca-sbom.spdx.json
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        with:
+          subject-path: |
+            releases/**/*.AppImage
+            releases/**/*.deb
+            releases/**/*.exe
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: release
           path: |
-            releases/linux/**/*.AppImage
-            releases/linux/**/*.deb
-            releases/windows/**/*.exe
+            releases/**
+            synca-sbom.spdx.json
+          if-no-files-found: error
+          retention-days: 30
 
   publish:
+    name: Publish release
     needs: build
     runs-on: ubuntu-latest
-
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: release
           path: artifacts
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda
         with:
           generate_release_notes: true
           files: artifacts/**/*
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

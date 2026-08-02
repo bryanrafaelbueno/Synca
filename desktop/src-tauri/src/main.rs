@@ -3,9 +3,13 @@
 
 mod cli;
 
-use tauri_plugin_shell::ShellExt;
+use tauri::{
+    menu::{MenuBuilder, MenuItemBuilder},
+    tray::TrayIconBuilder,
+    Manager, WindowEvent,
+};
 use tauri_plugin_dialog::DialogExt;
-use tauri::{Manager, menu::{MenuBuilder, MenuItemBuilder}, tray::TrayIconBuilder, WindowEvent};
+use tauri_plugin_shell::ShellExt;
 
 /// Detecta se está rodando como AppImage
 fn is_appimage() -> bool {
@@ -14,8 +18,15 @@ fn is_appimage() -> bool {
 
 #[tauri::command]
 async fn login_google_drive(app: tauri::AppHandle) -> Result<String, String> {
-    let sidecar = app.shell().sidecar("synca-daemon").map_err(|e| e.to_string())?;
-    let out = sidecar.args(["connect", "google-drive"]).output().await.map_err(|e| e.to_string())?;
+    let sidecar = app
+        .shell()
+        .sidecar("synca-daemon")
+        .map_err(|e| e.to_string())?;
+    let out = sidecar
+        .args(["connect", "google-drive"])
+        .output()
+        .await
+        .map_err(|e| e.to_string())?;
     if out.status.success() {
         Ok("Login OK".into())
     } else {
@@ -38,7 +49,9 @@ fn has_token(_app: tauri::AppHandle) -> bool {
         }
         #[cfg(target_os = "macos")]
         {
-            std::env::var("HOME").map(|h| format!("{}/Library/Application Support", h)).ok()
+            std::env::var("HOME")
+                .map(|h| format!("{}/Library/Application Support", h))
+                .ok()
         }
         #[cfg(not(any(target_os = "windows", target_os = "macos")))]
         {
@@ -85,11 +98,15 @@ async fn pick_folder_dialog(app: tauri::AppHandle) -> Result<Option<String>, Str
             });
             let _ = tx.send(result);
         });
-    Ok(rx.recv().map_err(|e| format!("Dialog channel error: {e}"))?)
+    rx.recv().map_err(|e| format!("Dialog channel error: {e}"))
 }
 
 #[tauri::command]
-async fn confirm_dialog(app: tauri::AppHandle, message: String, title: String) -> Result<bool, String> {
+async fn confirm_dialog(
+    app: tauri::AppHandle,
+    message: String,
+    title: String,
+) -> Result<bool, String> {
     let (tx, rx) = std::sync::mpsc::channel();
     app.dialog()
         .message(message)
@@ -98,11 +115,14 @@ async fn confirm_dialog(app: tauri::AppHandle, message: String, title: String) -
         .show(move |result| {
             let _ = tx.send(result);
         });
-    Ok(rx.recv().map_err(|e| format!("Dialog channel error: {e}"))?)
+    rx.recv().map_err(|e| format!("Dialog channel error: {e}"))
 }
 
 #[tauri::command]
-async fn start_daemon(app: tauri::AppHandle, state: tauri::State<'_, DaemonState>) -> Result<(), String> {
+async fn start_daemon(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, DaemonState>,
+) -> Result<(), String> {
     let _lock = state.spawn_lock.lock().await;
 
     // Kill existing daemon if running
@@ -115,8 +135,16 @@ async fn start_daemon(app: tauri::AppHandle, state: tauri::State<'_, DaemonState
 
     // Ping existing instance to quit (handles orphaned processes from previous runs)
     eprintln!("Checking for existing orphaned daemon on port 7373...");
-    let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(1)).build().unwrap();
-    if let Ok(_) = client.post("http://127.0.0.1:7373/quit").send().await {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(1))
+        .build()
+        .unwrap();
+    if client
+        .post("http://127.0.0.1:7373/quit")
+        .send()
+        .await
+        .is_ok()
+    {
         eprintln!("Sent quit signal to existing daemon. Waiting for port release...");
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
@@ -129,9 +157,7 @@ async fn start_daemon(app: tauri::AppHandle, state: tauri::State<'_, DaemonState
             // On Windows, keep the default environment (removing SystemRoot, WINDIR, etc. breaks Go)
             #[cfg(target_os = "linux")]
             let sidecar_cmd = {
-                let mut cmd = sidecar
-                    .args(["daemon"])
-                    .env_clear();
+                let mut cmd = sidecar.args(["daemon"]).env_clear();
                 // Only set env vars if they exist in the parent process.
                 // Passing empty strings is worse than not setting the var at all,
                 // because Go's os.UserConfigDir() will fallback to $HOME/.config.
@@ -184,7 +210,10 @@ async fn start_daemon(app: tauri::AppHandle, state: tauri::State<'_, DaemonState
                                     eprintln!("[daemon stdout] {}", text.trim());
                                 }
                                 tauri_plugin_shell::process::CommandEvent::Terminated(payload) => {
-                                    eprintln!("[daemon] terminated with code {:?}, signal {:?}", payload.code, payload.signal);
+                                    eprintln!(
+                                        "[daemon] terminated with code {:?}, signal {:?}",
+                                        payload.code, payload.signal
+                                    );
                                     // Clear the state since daemon died
                                     let state = app_clone.state::<DaemonState>();
                                     let mut guard = state.child.lock().unwrap();
@@ -214,7 +243,11 @@ async fn start_daemon(app: tauri::AppHandle, state: tauri::State<'_, DaemonState
                             }
                         }
                         if i == 5 {
-                            eprintln!("Waiting for daemon to be ready... (attempt {}/{})", i + 1, MAX_RETRIES);
+                            eprintln!(
+                                "Waiting for daemon to be ready... (attempt {}/{})",
+                                i + 1,
+                                MAX_RETRIES
+                            );
                         }
                     }
 
@@ -242,7 +275,10 @@ async fn start_daemon(app: tauri::AppHandle, state: tauri::State<'_, DaemonState
 }
 
 #[tauri::command]
-async fn restart_daemon(app: tauri::AppHandle, state: tauri::State<'_, DaemonState>) -> Result<(), String> {
+async fn restart_daemon(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, DaemonState>,
+) -> Result<(), String> {
     start_daemon(app, state).await
 }
 
@@ -251,13 +287,13 @@ fn can_autostart() -> bool {
     if !is_appimage() {
         return true;
     }
-    
+
     // If it is an AppImage, check if it's in a stable location
     if let Ok(appimage_path) = std::env::var("APPIMAGE") {
         // Safe if in /usr/ (AUR), /opt/, or ~/.local/bin/
-        appimage_path.starts_with("/usr/") || 
-        appimage_path.starts_with("/opt/") || 
-        appimage_path.contains("/.local/bin/")
+        appimage_path.starts_with("/usr/")
+            || appimage_path.starts_with("/opt/")
+            || appimage_path.contains("/.local/bin/")
     } else {
         false
     }
@@ -273,7 +309,10 @@ fn main() {
         })
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .setup(|app| {
             // 1. Create Tray Menu Items
             let quit_i = MenuItemBuilder::with_id("quit", "Quit Synca").build(app)?;
@@ -291,19 +330,17 @@ fn main() {
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
                 .show_menu_on_left_click(false)
-                .on_menu_event(|app, event| {
-                    match event.id.as_ref() {
-                        "quit" => {
-                            app.exit(0);
-                        }
-                        "show" => {
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                        }
-                        _ => {}
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "quit" => {
+                        app.exit(0);
                     }
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    _ => {}
                 })
                 .build(app)?;
 
