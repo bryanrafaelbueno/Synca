@@ -16,17 +16,48 @@ fn is_appimage() -> bool {
     std::env::var("APPIMAGE").is_ok() || std::env::var("APPDIR").is_ok()
 }
 
+/// On Linux (especially AppImage), clear the environment and re-inject only
+/// the variables a Go subprocess needs. This prevents LD_LIBRARY_PATH
+/// conflicts with the bundled WebKit and still gives the daemon and the
+/// browser launcher (xdg-open) a working display session. Only vars present
+/// in the parent are passed: empty strings are worse than unset vars,
+/// because Go's os.UserConfigDir() falls back to $HOME/.config.
+#[cfg(target_os = "linux")]
+fn with_display_env(
+    cmd: tauri_plugin_shell::process::Command,
+) -> tauri_plugin_shell::process::Command {
+    let mut cmd = cmd.env_clear();
+    for var in [
+        "HOME",
+        "PATH",
+        "XDG_CONFIG_HOME",
+        "DISPLAY",
+        "WAYLAND_DISPLAY",
+        "XDG_RUNTIME_DIR",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "XAUTHORITY",
+        "DBUS_SESSION_BUS_ADDRESS",
+    ] {
+        if let Ok(val) = std::env::var(var) {
+            cmd = cmd.env(var, val);
+        }
+    }
+    cmd
+}
+
 #[tauri::command]
 async fn login_google_drive(app: tauri::AppHandle) -> Result<String, String> {
     let sidecar = app
         .shell()
         .sidecar("synca-daemon")
         .map_err(|e| e.to_string())?;
-    let out = sidecar
-        .args(["connect", "google-drive"])
-        .output()
-        .await
-        .map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "linux")]
+    let sidecar = with_display_env(sidecar.args(["connect", "google-drive"]));
+    #[cfg(not(target_os = "linux"))]
+    let sidecar = sidecar.args(["connect", "google-drive"]);
+
+    let out = sidecar.output().await.map_err(|e| e.to_string())?;
     if out.status.success() {
         Ok("Login OK".into())
     } else {
@@ -153,43 +184,10 @@ async fn start_daemon(
         Ok(sidecar) => {
             eprintln!("Starting synca-daemon sidecar...");
 
-            // On Linux (especially AppImage), clear env to prevent LD_LIBRARY_PATH conflicts
-            // On Windows, keep the default environment (removing SystemRoot, WINDIR, etc. breaks Go)
+            // On Linux (especially AppImage), clear env to prevent LD_LIBRARY_PATH conflicts.
+            // On Windows, keep the default environment (removing SystemRoot, WINDIR, etc. breaks Go).
             #[cfg(target_os = "linux")]
-            let sidecar_cmd = {
-                let mut cmd = sidecar.args(["daemon"]).env_clear();
-                // Only set env vars if they exist in the parent process.
-                // Passing empty strings is worse than not setting the var at all,
-                // because Go's os.UserConfigDir() will fallback to $HOME/.config.
-                if let Ok(val) = std::env::var("HOME") {
-                    cmd = cmd.env("HOME", val);
-                }
-                if let Ok(val) = std::env::var("PATH") {
-                    cmd = cmd.env("PATH", val);
-                }
-                if let Ok(val) = std::env::var("XDG_CONFIG_HOME") {
-                    cmd = cmd.env("XDG_CONFIG_HOME", val);
-                }
-                if let Ok(val) = std::env::var("DISPLAY") {
-                    cmd = cmd.env("DISPLAY", val);
-                }
-                if let Ok(val) = std::env::var("WAYLAND_DISPLAY") {
-                    cmd = cmd.env("WAYLAND_DISPLAY", val);
-                }
-                if let Ok(val) = std::env::var("XDG_RUNTIME_DIR") {
-                    cmd = cmd.env("XDG_RUNTIME_DIR", val);
-                }
-                if let Ok(val) = std::env::var("GOOGLE_APPLICATION_CREDENTIALS") {
-                    cmd = cmd.env("GOOGLE_APPLICATION_CREDENTIALS", val);
-                }
-                if let Ok(val) = std::env::var("XAUTHORITY") {
-                    cmd = cmd.env("XAUTHORITY", val);
-                }
-                if let Ok(val) = std::env::var("DBUS_SESSION_BUS_ADDRESS") {
-                    cmd = cmd.env("DBUS_SESSION_BUS_ADDRESS", val);
-                }
-                cmd
-            };
+            let sidecar_cmd = with_display_env(sidecar.args(["daemon"]));
 
             #[cfg(not(target_os = "linux"))]
             let sidecar_cmd = sidecar.args(["daemon"]);

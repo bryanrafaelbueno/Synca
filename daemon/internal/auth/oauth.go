@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/synca/daemon/internal/config"
 
@@ -52,6 +53,9 @@ var googleClientSecret string
 const (
 	localRedirectPort = "9373"
 	localRedirectURL  = "http://localhost:9373/oauth/callback"
+	// oauthTimeout bounds the browser sign-in so a failed or abandoned
+	// authorization surfaces as an error instead of hanging forever.
+	oauthTimeout = 5 * time.Minute
 )
 
 func configDir() string {
@@ -208,13 +212,20 @@ func RunOAuthFlow() error {
 	)
 
 	log.Info().Msg("Opening browser for Google Drive authentication (PKCE)...")
-	openBrowser(authURL)
+	if err := openBrowser(authURL); err != nil {
+		// The URL is not confidential: it carries the PKCE challenge and a
+		// per-run state value, never the client secret. Surfacing it lets
+		// users complete sign-in when no browser launcher is available.
+		return fmt.Errorf("could not open a browser automatically; visit this URL to sign in: %s (%w)", authURL, err)
+	}
 
 	var code string
 	select {
 	case code = <-codeCh:
 	case err = <-errCh:
 		return err
+	case <-time.After(oauthTimeout):
+		return fmt.Errorf("authentication timed out after %s; no OAuth callback was received", oauthTimeout)
 	}
 
 	ctx := context.Background()
